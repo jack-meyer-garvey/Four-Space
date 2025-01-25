@@ -1,4 +1,5 @@
 from tkinter import *
+import numpy as np
 
 
 def createWindow(x: int, y: int):
@@ -13,12 +14,31 @@ def createWindow(x: int, y: int):
     return r, c
 
 
-def xCoordinateToScreen(x: int):
+def xCoordinateToScreen(x: float):
     return resize * (180 + x)
 
 
-def yCoordinateToScreen(y: int):
+def yCoordinateToScreen(y: float):
     return resize * (126 - y)
+
+
+def rotateXY(x, y, z, w, angle):
+    return x * np.cos(angle) - y * np.sin(angle), x * np.sin(angle) + y * np.cos(angle), z, w
+
+def rotateXZ(x, y, z, w, angle):
+    return x * np.cos(angle) - z * np.sin(angle), y, x * np.sin(angle) + z * np.cos(angle), w
+
+def rotateXW(x, y, z, w, angle):
+    return x * np.cos(angle) - w * np.sin(angle), y, z, x*np.sin(angle) + w*np.cos(angle)
+
+def rotateYZ(x, y, z, w, angle):
+    return x, y * np.cos(angle) - z * np.sin(angle), y * np.sin(angle) + z * np.cos(angle), w
+
+def rotateYW(x, y, z, w, angle):
+    return x, y * np.cos(angle) - w * np.sin(angle), z, y*np.sin(angle) + w*np.cos(angle)
+
+def rotateZW(x, y, z, w, angle):
+    return x, y, z * np.cos(angle) - w * np.sin(angle), z * np.sin(angle) + w * np.cos(angle)
 
 
 class overlay:
@@ -52,5 +72,12 @@ class overlay:
 resize = 2
 root, canvas = createWindow(int(600 * resize), int(400 * resize))
 main = overlay()
+
+square = [-20, -20, -20, 20, 20, 20, 20, -20, -20, -20]
+for i in range(len(square)//2):
+    a, b = rotateZW(square[i*2], square[i*2+1], 0, 0, np.pi*3/4)[0:2]
+    square[i*2] = xCoordinateToScreen(a)
+    square[i*2+1] = yCoordinateToScreen(b)
+thing = canvas.create_line(*square, fill='white', width=4*resize, joinstyle='miter')
 
 mainloop()
