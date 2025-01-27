@@ -1,5 +1,6 @@
 from tkinter import *
 import numpy as np
+import itertools
 
 
 def createWindow(x: int, y: int):
@@ -17,46 +18,29 @@ def createWindow(x: int, y: int):
 def xCoordinateToScreen(x: float):
     return resize * (180 + x)
 
-
 def yCoordinateToScreen(y: float):
     return resize * (126 - y)
 
-
-def rotateXY(x, y, z, w, angle):
-    return x * np.cos(angle) - y * np.sin(angle), x * np.sin(angle) + y * np.cos(angle), z, w
+def translationMatrix(x, y, z, w):
+    return np.array([[1, 0, 0, 0, x], [0, 1, 0, 0, y], [0, 0, 1, 0, z], [0, 0, 0, 1, w], [0, 0, 0, 0, 1]])
 
 def rotationMatrixXY(angle):
-    return np.matrix([[np.cos(angle), -np.sin(angle), 0, 0], [np.sin(angle), np.cos(angle), 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
-
-def rotateXZ(x, y, z, w, angle):
-    return x * np.cos(angle) - z * np.sin(angle), y, x * np.sin(angle) + z * np.cos(angle), w
+    return np.array([[np.cos(angle), -np.sin(angle), 0, 0, 0], [np.sin(angle), np.cos(angle), 0, 0, 0], [0, 0, 1, 0, 0], [0, 0, 0, 1, 0], [0, 0, 0, 0, 1]])
 
 def rotationMatrixXZ(angle):
-    return np.matrix([[np.cos(angle), 0, -np.sin(angle), 0], [0, 1, 0, 0], [np.sin(angle), 0, np.cos(angle), 0], [0, 0, 0, 1]])
-
-def rotateXW(x, y, z, w, angle):
-    return x * np.cos(angle) - w * np.sin(angle), y, z, x*np.sin(angle) + w*np.cos(angle)
+    return np.array([[np.cos(angle), 0, -np.sin(angle), 0, 0], [0, 1, 0, 0, 0], [np.sin(angle), 0, np.cos(angle), 0, 0], [0, 0, 0, 1, 0], [0, 0, 0, 0, 1]])
 
 def rotationMatrixXW(angle):
-    return np.matrix([[np.cos(angle), 0, 0, -np.sin(angle)], [0, 1, 0, 0], [0, 0, 1, 0], [np.sin(angle), 0, 0, np.cos(angle)]])
-
-def rotateYZ(x, y, z, w, angle):
-    return x, y * np.cos(angle) - z * np.sin(angle), y * np.sin(angle) + z * np.cos(angle), w
+    return np.array([[np.cos(angle), 0, 0, -np.sin(angle), 0], [0, 1, 0, 0, 0], [0, 0, 1, 0, 0], [np.sin(angle), 0, 0, np.cos(angle), 0], [0, 0, 0, 0, 1]])
 
 def rotationMatrixYZ(angle):
-    return np.matrix([[1, 0, 0, 0], [0, np.cos(angle), -np.sin(angle), 0], [0, np.sin(angle), np.cos(angle), 0], [0, 0, 0, 1]])
-
-def rotateYW(x, y, z, w, angle):
-    return x, y * np.cos(angle) - w * np.sin(angle), z, y*np.sin(angle) + w*np.cos(angle)
+    return np.array([[1, 0, 0, 0, 0], [0, np.cos(angle), -np.sin(angle), 0, 0], [0, np.sin(angle), np.cos(angle), 0, 0], [0, 0, 0, 1, 0], [0, 0, 0, 0, 1]])
 
 def rotationMatrixYW(angle):
-    return np.matrix([[1, 0, 0, 0], [0, np.cos(angle), 0, -np.sin(angle)], [0, 0, 1, 0], [np.sin(angle), 0, 0, np.cos(angle)]])
-
-def rotateZW(x, y, z, w, angle):
-    return x, y, z * np.cos(angle) - w * np.sin(angle), z * np.sin(angle) + w * np.cos(angle)
+    return np.array([[1, 0, 0, 0, 0], [0, np.cos(angle), 0, -np.sin(angle), 0], [0, 0, 1, 0, 0], [np.sin(angle), 0, 0, np.cos(angle), 0], [0, 0, 0, 0, 1]])
 
 def rotationMatrixZW(angle):
-    return np.matrix([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, np.cos(angle), -np.sin(angle)], [0, 0, np.sin(angle), np.cos(angle)]])
+    return np.array([[1, 0, 0, 0, 0], [0, 1, 0, 0, 0], [0, 0, np.cos(angle), -np.sin(angle), 0], [0, 0, np.sin(angle), np.cos(angle), 0], [0, 0, 0, 0, 1]])
 
 
 class overlay:
@@ -88,61 +72,74 @@ class overlay:
                                               font=('System', int(12 * resize)), width=508 * resize)
 
 class fourSpace:
-    def __init__(self, xN, yN, zN, wN, sideLength):
+    def __init__(self, xN, yN, zN, wN, sideLength, screenX=180, screenY=126):
         self.xN = xN * sideLength
         self.yN = yN * sideLength
         self.zN = zN * sideLength
         self.wN = wN * sideLength
         self.gridLines = []
         self.gridLinesIndex = []
+        self.currentTransform = np.identity(5)
+        self.screenMatrix = np.array([[resize, 0, 0, 0, resize * screenX],
+                                 [0, -resize, 0, 0, resize * screenY],
+                                 [0, 0, 1, 0, 0],
+                                 [0, 0, 0, 1, 0],
+                                 [0, 0, 0, 0, 1]])
 
     def generateOutline(self):
-        faces = [[[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2], [-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2], [-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2]],
-                [[-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2]],
-                [[self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2]],
-                [[self.xN/2, self.yN/2, -self.zN/2, -self.wN/2], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2], [self.xN/2, self.yN/2, self.zN/2, self.wN/2], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2], [-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2], [-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2]],
-                [[-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2]],
-                [[self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2]],
-                [[self.xN/2, -self.yN/2, self.zN/2, -self.wN/2], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2], [self.xN/2, self.yN/2, self.zN/2, self.wN/2], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2], [-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2], [-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2]],
-                [[self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2]],
-                [[self.xN/2, -self.yN/2, -self.zN/2, self.wN/2], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2], [self.xN/2, self.yN/2, self.zN/2, self.wN/2], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2], [-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2], [self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2]],
-                [[-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2]],
-                [[-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2]],
-                [[-self.xN/2, self.yN/2, self.zN/2, -self.wN/2], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2], [self.xN/2, self.yN/2, self.zN/2, self.wN/2], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2], [-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2], [self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2]],
-                [[-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2]],
-                [[-self.xN/2, self.yN/2, -self.zN/2, self.wN/2], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2], [self.xN/2, self.yN/2, self.zN/2, self.wN/2], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2], [-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2], [self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2]],
-                [[-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2]],
-                [[-self.xN/2, -self.yN/2, self.zN/2, self.wN/2], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2], [self.xN/2, self.yN/2, self.zN/2, self.wN/2], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2]]]
-        for i, face in enumerate(faces):
+        faces = [[[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1]],
+                [[-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1]],
+                [[self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1]],
+                [[self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1]],
+                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1]],
+                [[-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1]],
+                [[self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1]],
+                [[self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1]],
+                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1]],
+                [[-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1]],
+                [[self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1]],
+                [[self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1]],
+                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1]],
+                [[-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1]],
+                [[-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1]],
+                [[-self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1]],
+                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1]],
+                [[-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1]],
+                [[-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1]],
+                [[-self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1]],
+                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1]],
+                [[-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1]],
+                [[-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1]],
+                [[-self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1]]]
+        for face in faces:
+            for i in range(4):
+                # noinspection PyTypeChecker
+                face[i] = np.array(face[i])
             self.gridLines.append(face)
 
     def drawGridLines(self):
-        for line in self.gridLines:
-            self.gridLinesIndex.append(canvas.create_line(
-                xCoordinateToScreen(line[0][0]), yCoordinateToScreen(line[0][1]), xCoordinateToScreen(line[1][0]), yCoordinateToScreen(line[1][1]),
-                xCoordinateToScreen(line[1][0]), yCoordinateToScreen(line[1][1]), xCoordinateToScreen(line[2][0]), yCoordinateToScreen(line[2][1]),
-                xCoordinateToScreen(line[2][0]), yCoordinateToScreen(line[2][1]), xCoordinateToScreen(line[3][0]), yCoordinateToScreen(line[3][1]),
-                xCoordinateToScreen(line[3][0]), yCoordinateToScreen(line[3][1]), xCoordinateToScreen(line[0][0]), yCoordinateToScreen(line[0][1]),
-                fill='white', width=2, joinstyle='miter'))
+        for face in self.gridLines:
+            self.gridLinesIndex.append(canvas.create_polygon(
+                *itertools.chain.from_iterable((self.screenMatrix @ self.currentTransform @ x)[:2] for x in face),
+                fill='white', width=1, joinstyle='round'))
+
+
+    def transformGridLines(self, matrix):
+        self.currentTransform = matrix @ self.currentTransform
+        for index, face in zip(self.gridLinesIndex, self.gridLines):
+            canvas.coords(index,
+            *itertools.chain.from_iterable((self.screenMatrix @ self.currentTransform @ x)[:2] for x in face))
 
 
 resize = 2
 root, canvas = createWindow(int(600 * resize), int(400 * resize))
 main = overlay()
 
-tesseracts = fourSpace(5, 6, 3, 2, 10)
+tesseracts = fourSpace(5, 5, 5, 5, 24)
 tesseracts.generateOutline()
 tesseracts.drawGridLines()
-print(tesseracts.gridLinesIndex)
-
+tesseracts.transformGridLines(rotationMatrixXW(np.pi / 6) @ rotationMatrixYW(np.pi / 3) @ rotationMatrixZW(np.pi / 3)
+                              @ rotationMatrixXW(np.pi / 7))
 
 
 mainloop()
