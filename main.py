@@ -11,7 +11,7 @@ def createWindow(x: int, y: int):
     c = Canvas(r, width=x, height=y, bg='black')
     c.focus_set()
     c.pack()
-    c.focus_set()
+    r.focus_set()
     return r, c
 
 
@@ -37,7 +37,7 @@ def rotationMatrixYZ(angle):
     return np.array([[1, 0, 0, 0, 0], [0, np.cos(angle), -np.sin(angle), 0, 0], [0, np.sin(angle), np.cos(angle), 0, 0], [0, 0, 0, 1, 0], [0, 0, 0, 0, 1]])
 
 def rotationMatrixYW(angle):
-    return np.array([[1, 0, 0, 0, 0], [0, np.cos(angle), 0, -np.sin(angle), 0], [0, 0, 1, 0, 0], [np.sin(angle), 0, 0, np.cos(angle), 0], [0, 0, 0, 0, 1]])
+    return np.array([[1, 0, 0, 0, 0], [0, np.cos(angle), 0, -np.sin(angle), 0], [0, 0, 1, 0, 0], [0, np.sin(angle), 0, np.cos(angle), 0], [0, 0, 0, 0, 1]])
 
 def rotationMatrixZW(angle):
     return np.array([[1, 0, 0, 0, 0], [0, 1, 0, 0, 0], [0, 0, np.cos(angle), -np.sin(angle), 0], [0, 0, np.sin(angle), np.cos(angle), 0], [0, 0, 0, 0, 1]])
@@ -131,13 +131,17 @@ class fourSpace:
             *itertools.chain.from_iterable((self.screenMatrix @ self.currentTransform @ x)[:2] for x in face))
 
 
-resize = 2
+resize = 1
 root, canvas = createWindow(int(600 * resize), int(400 * resize))
 main = overlay()
 
-tesseracts = fourSpace(2, 5, 5, 5, 24)
+tesseracts = fourSpace(2, 5, 7, 7, 24)
 tesseracts.generateOutline()
 tesseracts.drawGridLines()
-tesseracts.transformGridLines(rotationMatrixYW(np.pi / 4) @ rotationMatrixXZ(np.pi / 4) @ rotationMatrixXW(np.pi / 4))
+tesseracts.transformGridLines(rotationMatrixXW(-np.pi/4))
 
+def rotateBy12(event):
+    tesseracts.transformGridLines(rotationMatrixXY(np.pi/32))
+
+g = root.bind('w', rotateBy12)
 mainloop()
