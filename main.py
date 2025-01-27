@@ -82,8 +82,8 @@ class fourSpace:
         self.currentTransform = np.identity(5)
         self.screenMatrix = np.array([[resize, 0, 0, 0, resize * screenX],
                                  [0, -resize, 0, 0, resize * screenY],
-                                 [0, 0, 1, 0, 0],
-                                 [0, 0, 0, 1, 0],
+                                 [0, 0, resize, 0, 0],
+                                 [0, 0, 0, resize, 0],
                                  [0, 0, 0, 0, 1]])
 
     def generateOutline(self):
@@ -121,7 +121,7 @@ class fourSpace:
         for face in self.gridLines:
             self.gridLinesIndex.append(canvas.create_polygon(
                 *itertools.chain.from_iterable((self.screenMatrix @ self.currentTransform @ x)[:2] for x in face),
-                fill='white', width=1, joinstyle='round'))
+                outline='white', width=1, fill='', joinstyle=ROUND))
 
 
     def transformGridLines(self, matrix):
@@ -135,11 +135,9 @@ resize = 2
 root, canvas = createWindow(int(600 * resize), int(400 * resize))
 main = overlay()
 
-tesseracts = fourSpace(5, 5, 5, 5, 24)
+tesseracts = fourSpace(2, 5, 5, 5, 24)
 tesseracts.generateOutline()
 tesseracts.drawGridLines()
-tesseracts.transformGridLines(rotationMatrixXW(np.pi / 6) @ rotationMatrixYW(np.pi / 3) @ rotationMatrixZW(np.pi / 3)
-                              @ rotationMatrixXW(np.pi / 7))
-
+tesseracts.transformGridLines(rotationMatrixYW(np.pi / 4) @ rotationMatrixXZ(np.pi / 4) @ rotationMatrixXW(np.pi / 4))
 
 mainloop()
