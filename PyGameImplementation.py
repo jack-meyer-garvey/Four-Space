@@ -1,6 +1,40 @@
 import pygame
 import numpy as np
 
+def tesseractPoints(x=1, y=1, z=1, w=1):
+    return list(np.array([[[-x, -y, -z, -w, 1], [-x, -y, -z, w, 1], [-x, -y, z, w, 1], [-x, -y, z, -w, 1]],
+                [[-x, y, -z, -w, 1], [-x, y, -z, w, 1], [-x, y, z, w, 1], [-x, y, z, -w, 1]],
+                [[x, -y, -z, -w, 1], [x, -y, -z, w, 1], [x, -y, z, w, 1], [x, -y, z, -w, 1]],
+                [[x, y, -z, -w, 1], [x, y, -z, w, 1], [x, y, z, w, 1], [x, y, z, -w, 1]],
+                [[-x, -y, -z, -w, 1], [-x, -y, -z, w, 1], [-x, y, -z, w, 1], [-x, y, -z, -w, 1]],
+                [[-x, -y, z, -w, 1], [-x, -y, z, w, 1], [-x, y, z, w, 1], [-x, y, z, -w, 1]],
+                [[x, -y, -z, -w, 1], [x, -y, -z, w, 1], [x, y, -z, w, 1], [x, y, -z, -w, 1]],
+                [[x, -y, z, -w, 1], [x, -y, z, w, 1], [x, y, z, w, 1], [x, y, z, -w, 1]],
+                [[-x, -y, -z, -w, 1], [-x, -y, z, -w, 1], [-x, y, z, -w, 1], [-x, y, -z, -w, 1]],
+                [[-x, -y, -z, w, 1], [-x, -y, z, w, 1], [-x, y, z, w, 1], [-x, y, -z, w, 1]],
+                [[x, -y, -z, -w, 1], [x, -y, z, -w, 1], [x, y, z, -w, 1], [x, y, -z, -w, 1]],
+                [[x, -y, -z, w, 1], [x, -y, z, w, 1], [x, y, z, w, 1], [x, y, -z, w, 1]],
+                [[-x, -y, -z, -w, 1], [-x, -y, -z, w, 1], [x, -y, -z, w, 1], [x, -y, -z, -w, 1]],
+                [[-x, -y, z, -w, 1], [-x, -y, z, w, 1], [x, -y, z, w, 1], [x, -y, z, -w, 1]],
+                [[-x, y, -z, -w, 1], [-x, y, -z, w, 1], [x, y, -z, w, 1], [x, y, -z, -w, 1]],
+                [[-x, y, z, -w, 1], [-x, y, z, w, 1], [x, y, z, w, 1], [x, y, z, -w, 1]],
+                [[-x, -y, -z, -w, 1], [-x, -y, z, -w, 1], [x, -y, z, -w, 1], [x, -y, -z, -w, 1]],
+                [[-x, -y, -z, w, 1], [-x, -y, z, w, 1], [x, -y, z, w, 1], [x, -y, -z, w, 1]],
+                [[-x, y, -z, -w, 1], [-x, y, z, -w, 1], [x, y, z, -w, 1], [x, y, -z, -w, 1]],
+                [[-x, y, -z, w, 1], [-x, y, z, w, 1], [x, y, z, w, 1], [x, y, -z, w, 1]],
+                [[-x, -y, -z, -w, 1], [-x, y, -z, -w, 1], [x, y, -z, -w, 1], [x, -y, -z, -w, 1]],
+                [[-x, -y, -z, w, 1], [-x, y, -z, w, 1], [x, y, -z, w, 1], [x, -y, -z, w, 1]],
+                [[-x, -y, z, -w, 1], [-x, y, z, -w, 1], [x, y, z, -w, 1], [x, -y, z, -w, 1]],
+                [[-x, -y, z, w, 1], [-x, y, z, w, 1], [x, y, z, w, 1], [x, -y, z, w, 1]]]))
+
+class fourSpace:
+    def __init__(self, xN, yN, zN, wN, sideLength):
+        self.xN = xN
+        self.yN = yN
+        self.zN = zN
+        self.wN = wN
+        self.sideLength = sideLength
+
 
 resize = 1
 pygame.init()
