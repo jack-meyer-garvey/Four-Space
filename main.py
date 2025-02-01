@@ -14,12 +14,33 @@ def createWindow(x: int, y: int):
     r.focus_set()
     return r, c
 
+def tesseractPoints(x, y, z, w):
+    return list(np.array([[[-x, -y, -z, -w, 1], [-x, -y, -z, w, 1], [-x, -y, z, w, 1], [-x, -y, z, -w, 1]],
+                [[-x, y, -z, -w, 1], [-x, y, -z, w, 1], [-x, y, z, w, 1], [-x, y, z, -w, 1]],
+                [[x, -y, -z, -w, 1], [x, -y, -z, w, 1], [x, -y, z, w, 1], [x, -y, z, -w, 1]],
+                [[x, y, -z, -w, 1], [x, y, -z, w, 1], [x, y, z, w, 1], [x, y, z, -w, 1]],
+                [[-x, -y, -z, -w, 1], [-x, -y, -z, w, 1], [-x, y, -z, w, 1], [-x, y, -z, -w, 1]],
+                [[-x, -y, z, -w, 1], [-x, -y, z, w, 1], [-x, y, z, w, 1], [-x, y, z, -w, 1]],
+                [[x, -y, -z, -w, 1], [x, -y, -z, w, 1], [x, y, -z, w, 1], [x, y, -z, -w, 1]],
+                [[x, -y, z, -w, 1], [x, -y, z, w, 1], [x, y, z, w, 1], [x, y, z, -w, 1]],
+                [[-x, -y, -z, -w, 1], [-x, -y, z, -w, 1], [-x, y, z, -w, 1], [-x, y, -z, -w, 1]],
+                [[-x, -y, -z, w, 1], [-x, -y, z, w, 1], [-x, y, z, w, 1], [-x, y, -z, w, 1]],
+                [[x, -y, -z, -w, 1], [x, -y, z, -w, 1], [x, y, z, -w, 1], [x, y, -z, -w, 1]],
+                [[x, -y, -z, w, 1], [x, -y, z, w, 1], [x, y, z, w, 1], [x, y, -z, w, 1]],
+                [[-x, -y, -z, -w, 1], [-x, -y, -z, w, 1], [x, -y, -z, w, 1], [x, -y, -z, -w, 1]],
+                [[-x, -y, z, -w, 1], [-x, -y, z, w, 1], [x, -y, z, w, 1], [x, -y, z, -w, 1]],
+                [[-x, y, -z, -w, 1], [-x, y, -z, w, 1], [x, y, -z, w, 1], [x, y, -z, -w, 1]],
+                [[-x, y, z, -w, 1], [-x, y, z, w, 1], [x, y, z, w, 1], [x, y, z, -w, 1]],
+                [[-x, -y, -z, -w, 1], [-x, -y, z, -w, 1], [x, -y, z, -w, 1], [x, -y, -z, -w, 1]],
+                [[-x, -y, -z, w, 1], [-x, -y, z, w, 1], [x, -y, z, w, 1], [x, -y, -z, w, 1]],
+                [[-x, y, -z, -w, 1], [-x, y, z, -w, 1], [x, y, z, -w, 1], [x, y, -z, -w, 1]],
+                [[-x, y, -z, w, 1], [-x, y, z, w, 1], [x, y, z, w, 1], [x, y, -z, w, 1]],
+                [[-x, -y, -z, -w, 1], [-x, y, -z, -w, 1], [x, y, -z, -w, 1], [x, -y, -z, -w, 1]],
+                [[-x, -y, -z, w, 1], [-x, y, -z, w, 1], [x, y, -z, w, 1], [x, -y, -z, w, 1]],
+                [[-x, -y, z, -w, 1], [-x, y, z, -w, 1], [x, y, z, -w, 1], [x, -y, z, -w, 1]],
+                [[-x, -y, z, w, 1], [-x, y, z, w, 1], [x, y, z, w, 1], [x, -y, z, w, 1]]]))
 
-def xCoordinateToScreen(x: float):
-    return resize * (180 + x)
-
-def yCoordinateToScreen(y: float):
-    return resize * (126 - y)
+homogenize = lambda x: x[:2]/x[-1]
 
 def translationMatrix(x, y, z, w):
     return np.array([[1, 0, 0, 0, x], [0, 1, 0, 0, y], [0, 0, 1, 0, z], [0, 0, 0, 1, w], [0, 0, 0, 0, 1]])
@@ -77,8 +98,10 @@ class fourSpace:
         self.yN = yN * sideLength
         self.zN = zN * sideLength
         self.wN = wN * sideLength
+        self.sideLength = sideLength
         self.gridLines = []
         self.gridLinesIndex = []
+        self.physicalObjects = set()
         self.currentTransform = np.identity(5)
         self.screenMatrix = np.array([[resize, 0, 0, 0, resize * screenX],
                                  [0, -resize, 0, 0, resize * screenY],
@@ -87,34 +110,8 @@ class fourSpace:
                                  [0, 0, 0, 0, 1]])
 
     def generateOutline(self):
-        faces = [[[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1]],
-                [[-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1]],
-                [[self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1]],
-                [[self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1]],
-                [[-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1]],
-                [[self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1]],
-                [[self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1]],
-                [[self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1]],
-                [[self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1]],
-                [[-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1]],
-                [[-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1]],
-                [[-self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1]],
-                [[-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1]],
-                [[-self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, -self.wN/2, 1]],
-                [[-self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, -self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, -self.zN/2, self.wN/2, 1]],
-                [[-self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, -self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, -self.wN/2, 1]],
-                [[-self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1], [-self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, self.yN/2, self.zN/2, self.wN/2, 1], [self.xN/2, -self.yN/2, self.zN/2, self.wN/2, 1]]]
+        faces = tesseractPoints(self.xN/2, self.yN/2, self.zN/2, self.wN/2)
         for face in faces:
-            for i in range(4):
-                # noinspection PyTypeChecker
-                face[i] = np.array(face[i])
             self.gridLines.append(face)
 
     def drawGridLines(self):
@@ -124,24 +121,59 @@ class fourSpace:
                 outline='white', width=1, fill='', joinstyle=ROUND))
 
 
-    def transformGridLines(self, matrix):
+    def transform(self, matrix):
         self.currentTransform = matrix @ self.currentTransform
         for index, face in zip(self.gridLinesIndex, self.gridLines):
             canvas.coords(index,
             *itertools.chain.from_iterable((self.screenMatrix @ self.currentTransform @ x)[:2] for x in face))
+        for hoi in self.physicalObjects:
+            for index, _ in zip(hoi.indexes, hoi.geometry):
+                canvas.coords(index,
+            *itertools.chain.from_iterable((self.screenMatrix @ self.currentTransform @ x)[:2] for x in _))
 
 
-resize = 1
+class physicalObject:
+    def __init__(self):
+        self.geometry = []
+        self.indexes = []
+        self.space = None
+
+    def addGeometry(self, geometry, indexes):
+        self.geometry.append(geometry)
+        self.indexes.append(indexes)
+        self.update()
+        
+    def spawn(self, space):
+        self.space = space
+        space.physicalObjects.add(self)
+        self.update()
+
+    def update(self):
+        if self.space:
+            for index, _ in zip(self.indexes, self.geometry):
+                canvas.coords(index,
+            *itertools.chain.from_iterable((self.space.screenMatrix @ self.space.currentTransform @ x)[:2] for x in _))
+
+
+
+resize = 2
 root, canvas = createWindow(int(600 * resize), int(400 * resize))
 main = overlay()
 
-tesseracts = fourSpace(2, 5, 7, 7, 24)
+tesseracts = fourSpace(7, 7, 7, 7, 12)
 tesseracts.generateOutline()
 tesseracts.drawGridLines()
-tesseracts.transformGridLines(rotationMatrixXW(-np.pi/4))
+tesseracts.transform(rotationMatrixXW(-np.pi / 3) @ rotationMatrixXW(np.pi / 17))
+
 
 def rotateBy12(event):
-    tesseracts.transformGridLines(rotationMatrixXY(np.pi/32))
+    tesseracts.transform(rotationMatrixXZ(np.pi / 64) @ rotationMatrixXY(np.pi / 32))
+
+def rotateByNeg12(event):
+    tesseracts.transform(rotationMatrixXW(-np.pi / 71) @ rotationMatrixYW(-np.pi / 64))
 
 g = root.bind('w', rotateBy12)
+b = root.bind('s', rotateByNeg12)
 mainloop()
+
+
