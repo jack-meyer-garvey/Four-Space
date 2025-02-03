@@ -35,6 +35,9 @@ class fourSpace:
         self.wN = wN
         self.sideLength = sideLength
 
+    def drawGrid(self):
+        pass
+
 
 resize = 1
 pygame.init()

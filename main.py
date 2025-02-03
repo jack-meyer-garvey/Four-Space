@@ -120,7 +120,6 @@ class fourSpace:
                 *itertools.chain.from_iterable((self.screenMatrix @ self.currentTransform @ x)[:2] for x in face),
                 outline='white', width=1, fill='', joinstyle=ROUND))
 
-
     def transform(self, matrix):
         self.currentTransform = matrix @ self.currentTransform
         for index, face in zip(self.gridLinesIndex, self.gridLines):
@@ -163,11 +162,11 @@ main = overlay()
 tesseracts = fourSpace(7, 7, 7, 7, 12)
 tesseracts.generateOutline()
 tesseracts.drawGridLines()
-tesseracts.transform(rotationMatrixXW(-np.pi / 3) @ rotationMatrixXW(np.pi / 17))
+
 
 
 def rotateBy12(event):
-    tesseracts.transform(rotationMatrixXZ(np.pi / 64) @ rotationMatrixXY(np.pi / 32))
+    tesseracts.transform(rotationMatrixXW(np.pi / 64) @ rotationMatrixXY(np.pi / 32))
 
 def rotateByNeg12(event):
     tesseracts.transform(rotationMatrixXW(-np.pi / 71) @ rotationMatrixYW(-np.pi / 64))
