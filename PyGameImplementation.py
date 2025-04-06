@@ -1,7 +1,8 @@
 import pygame
 import numpy as np
+from collections import deque
 
-resize = 2
+resize = 1.5
 size = (int(600 * resize), int(400 * resize))
 pygame.init()
 pygame.display.set_caption("Four Space")
@@ -13,7 +14,7 @@ pygame.display.set_icon(pygame.image.load('FourSpaceLogo.png'))
 # hoi is the main canvas. This gets drawn to screen every frame.
 hoi = np.zeros(size)
 
-class pixel_grid:
+class PixelGrid:
     binary_font = {' ': 0, 'A': 75247420147096911872, 'B': 555871685767213285376, 'C': 260722531473394434048,
                    'D': 555871571418003996672, 'E': 574173188683679629312, 'F': 574173188683679137792,
                    'G': 260722531680089735168, 'H': 316064021605081710592, 'I': 572430066098342166528,
@@ -33,69 +34,155 @@ class pixel_grid:
                    'w': 23830070468902912, 'x': 19228539665022976, 'y': 19291005639590960,
                    'z': 34920768539164672, '.': 16908288, ',': 16910336, '?': 260705518998341681152,
                    '!': 74367976108166610944, '(':4797315458791173652992, ')': 18963543407680091719680,
-                   "'": 74367940646769000448}
-
+                   "'": 74367940646769000448, "=": 272695526686720, "<": 292805448346697728, ">": 1157442766230519808,
+                   "ge": 148152674077506543360, "le": 37479097388377317120}
 
     def __init__(self, screen_size, pixel_size, main_canvas, background_color=707322):
         self.screen_size = screen_size
         self.pixel_size = pixel_size
-        self.gridX = screen_size[0] // pixel_size
-        self.gridY = screen_size[1] // pixel_size
+        self.grid_size = (screen_size[0] // pixel_size, screen_size[1] // pixel_size)
         self.main_canvas = main_canvas
         self.background_color = background_color
         self.layers = []
         self.add_blank_layer()
 
     def add_blank_layer(self):
-        self.layers.append((np.zeros(self.screen_size), np.ones(self.screen_size)))
+        self.layers.append((np.zeros(self.grid_size), np.ones(self.grid_size)))
 
     def apply_layers(self):
-        self.main_canvas *= 0
-        self.main_canvas += self.background_color
+        sum_layers = np.zeros(self.grid_size) + self.background_color
         for color, transparency in self.layers:
-            self.main_canvas *= transparency
-            self.main_canvas += color
-
-    def draw(self, pixelated_array, transparency_array, x_position, y_position, layer=0):
-        draw_slice = self.layers[layer][0][x_position*self.pixel_size:x_position*self.pixel_size+pixelated_array.shape[0],
-                     y_position*self.pixel_size:y_position*self.pixel_size+pixelated_array.shape[1]]
-        draw_slice *= transparency_array
-        draw_slice += pixelated_array
-        transparency_slice = self.layers[layer][1][x_position*self.pixel_size:x_position*self.pixel_size+pixelated_array.shape[0],
-                     y_position*self.pixel_size:y_position*self.pixel_size+pixelated_array.shape[1]]
-        transparency_slice *= transparency_array
-
-    def draw_binary(self, num, x_position, y_position, color=2**24-1, layer=0, x_width=7, y_width=12):
-        A = np.zeros((x_width*self.pixel_size, y_width*self.pixel_size))
-        B = np.array(np.array_split(np.array([num >> i & 1 for i in range(x_width*y_width-1, -1, -1)]), y_width)).transpose()
-        Y = A.shape[0]
-        X = A.shape[1]
+            sum_layers *= transparency
+            sum_layers += color
+        Y = self.main_canvas.shape[0]
+        X = self.main_canvas.shape[1]
         k = self.pixel_size
         for y in range(0, k):
             for x in range(0, k):
-                A[y:Y:k, x:X:k] = B
-        self.draw(A*color, 1-A, x_position, y_position, layer)
+                self.main_canvas[y:Y:k, x:X:k] = sum_layers
+
+    def draw(self, pixelated_array, transparency_array, x_position, y_position, layer=0):
+        if x_position < 0:
+            pixelated_array = pixelated_array[-x_position:]
+            transparency_array = transparency_array[-x_position:]
+            x_position = 0
+        if y_position < 0:
+            pixelated_array = pixelated_array[:, -y_position:]
+            transparency_array = transparency_array[:, -y_position:]
+            y_position = 0
+        if x_position + pixelated_array.shape[0] > self.grid_size[0]:
+            pixelated_array = pixelated_array[:self.grid_size[0]-(x_position+pixelated_array.shape[0])]
+            transparency_array = transparency_array[:self.grid_size[0]-(x_position+transparency_array.shape[0])]
+        if y_position + pixelated_array.shape[1] > self.grid_size[1]:
+            pixelated_array = pixelated_array[:,:self.grid_size[1]-(y_position+pixelated_array.shape[1])]
+            transparency_array = transparency_array[:,:self.grid_size[1]-(y_position+transparency_array.shape[1])]
+        x_width = pixelated_array.shape[0]
+        y_width = pixelated_array.shape[1]
+        draw_slice = self.layers[layer][0][x_position:x_position+x_width, y_position:y_position+y_width]
+        draw_slice *= transparency_array
+        draw_slice += pixelated_array
+        transparency_slice = self.layers[layer][1][x_position:x_position+x_width, y_position:y_position+y_width]
+        transparency_slice *= transparency_array
+
+    def draw_binary(self, num, x_position, y_position, color=2**24-1, layer=0, x_width=7, y_width=12):
+        B = np.array(np.array_split(np.array([num >> i & 1 for i in range(x_width*y_width-1, -1, -1)]), y_width)).transpose()
+        self.draw(B*color, 1-B, x_position, y_position, layer)
 
     def draw_text(self, text, x_position, y_position, layer=-1, color=2**24-1):
-        for i, _ in enumerate(text):
-            self.draw_binary(pixel_grid.binary_font[_], x_position+7*i, y_position, layer=layer, color=color)
+        i = 0
+        letter = 0
+        while i != len(text):
+            if text[i] == '<':
+                i += 1
+                end = text[i:].find('>')
+                if end == -1:
+                    self.draw_binary(PixelGrid.binary_font['<'], x_position + 7 * letter, y_position, layer=layer,
+                                     color=color)
+                elif end == 0:
+                    self.draw_binary(PixelGrid.binary_font['<'], x_position + 7 * letter, y_position, layer=layer,
+                                     color=color)
+                    i += 1
+                else:
+                    self.draw_binary(PixelGrid.binary_font[text[i:i+end]], x_position + 7 * letter, y_position, layer=layer,
+                                     color=color)
+                    i += end + 1
+            else:
+                self.draw_binary(PixelGrid.binary_font[text[i]], x_position + 7 * letter, y_position, layer=layer,
+                                 color=color)
+                i += 1
+            letter += 1
 
+
+
+class Contexts:
+    def __init__(self):
+        self.defined_symbols = set()
+        self.symbolMeaning = {}
+
+    def symbol_to_meaning(self, symbol):
+        return self.symbolMeaning[PixelGrid.binary_font[symbol]]
+
+class Judgements:
+    def __init__(self, context):
+        pass
+
+class IsType(Judgements):
+    def __init__(self, context, Type):
+        self.Type = Type
+        super().__init__(context)
+
+class TermIsType(Judgements):
+    def __init__(self, context, term, Type):
+        self.term = term
+        self.Type = Type
+        super().__init__(context)
+
+class TypeEquality(Judgements):
+    def __init__(self, context, Type1, Type2):
+        super().__init__(context)
+
+class TermEquality(Judgements):
+    def __init__(self, context, Term1, Term2, Type):
+        self.Term1 = Term1
+        self.Term2 = Term2
+        self.Type = Type
+        super().__init__(context)
+
+
+class InferenceRules:
+    def __init__(self):
+        pass
+
+class ComputationRules:
+    def __init__(self):
+        pass
+
+class Terms:
+    def __init__(self):
+        pass
+
+class Types:
+    def __init__(self):
+        pass
 
 n = 4
-canvas = pixel_grid(size, n, hoi)
+canvas = PixelGrid(size, n, hoi)
+canvas.draw_text('v<le>W', 0, 0)
 
-canvas.draw_text("What the fuck? Fuckin' hell!", 4, 10)
+
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
         if event.type == pygame.KEYDOWN:
-            pass
+            canvas.draw_text(
+                'jsjsjsjsjjsjsjjsssssssssssss', 0, 13)
 
     canvas.apply_layers()
     pygame.surfarray.blit_array(screen, hoi)
     pygame.display.flip()
-    clock.tick(30)  # limits FPS to 60
-    if clock.get_fps() < 28 and clock.get_fps():
+
+    clock.tick(60)  # limits FPS to 60
+    if clock.get_fps() < 58 and clock.get_fps():
         print(clock.get_fps())
 pygame.quit()
