@@ -34,8 +34,12 @@ class PixelGrid:
                    'w': 23830070468902912, 'x': 19228539665022976, 'y': 19291005639590960,
                    'z': 34920768539164672, '.': 16908288, ',': 16910336, '?': 260705518998341681152,
                    '!': 74367976108166610944, '(':4797315458791173652992, ')': 18963543407680091719680,
-                   "'": 74367940646769000448, "=": 272695526686720, "<": 292805448346697728, ">": 1157442766230519808,
-                   "ge": 148152674077506543360, "le": 37479097388377317120}
+                   "'": 74367940646769000448, "=": 272695526686720, "<": 292805448346697728,
+                   ">": 1157442766230519808, "ge": 148152674077506539264, "le": 37479097388377316864,
+                   "0": 260725953772592234496, "1": 77826740622004813824, "2": 260705519000557158400,
+                   "3": 260705553975016357888, "4": 56071091979129225216, "5": 574173187644838051840,
+                   "6": 260722654687953092608, "7": 571994325244371533824, "8": 260723639850371579904,
+                   "9": 260723666092621758464}
 
     def __init__(self, screen_size, pixel_size, main_canvas, background_color=707322):
         self.screen_size = screen_size
@@ -113,7 +117,6 @@ class PixelGrid:
             letter += 1
 
 
-
 class Contexts:
     def __init__(self):
         self.defined_symbols = set()
@@ -121,6 +124,7 @@ class Contexts:
 
     def symbol_to_meaning(self, symbol):
         return self.symbolMeaning[PixelGrid.binary_font[symbol]]
+
 
 class Judgements:
     def __init__(self, context):
@@ -141,6 +145,7 @@ class TypeEquality(Judgements):
     def __init__(self, context, Type1, Type2):
         super().__init__(context)
 
+
 class TermEquality(Judgements):
     def __init__(self, context, Term1, Term2, Type):
         self.Term1 = Term1
@@ -152,6 +157,7 @@ class TermEquality(Judgements):
 class InferenceRules:
     def __init__(self):
         pass
+
 
 class ComputationRules:
     def __init__(self):
@@ -167,7 +173,8 @@ class Types:
 
 n = 4
 canvas = PixelGrid(size, n, hoi)
-canvas.draw_text('v<le>W', 0, 0)
+canvas.draw_text('1042 <le> 2048', 30, 30)
+
 
 
 while running:
@@ -175,8 +182,7 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         if event.type == pygame.KEYDOWN:
-            canvas.draw_text(
-                'jsjsjsjsjjsjsjjsssssssssssss', 0, 13)
+            pass
 
     canvas.apply_layers()
     pygame.surfarray.blit_array(screen, hoi)
