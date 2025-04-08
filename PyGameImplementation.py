@@ -1,18 +1,7 @@
+import os
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import pygame
 import numpy as np
-from collections import deque
-
-resize = 1.5
-size = (int(600 * resize), int(400 * resize))
-pygame.init()
-pygame.display.set_caption("Four Space")
-screen = pygame.display.set_mode(size)
-clock = pygame.time.Clock()
-running = True
-pygame.display.set_icon(pygame.image.load('FourSpaceLogo.png'))
-
-# hoi is the main canvas. This gets drawn to screen every frame.
-hoi = np.zeros(size)
 
 class PixelGrid:
     binary_font = {' ': 0, 'A': 75247420147096911872, 'B': 555871685767213285376, 'C': 260722531473394434048,
@@ -92,42 +81,69 @@ class PixelGrid:
         B = np.array(np.array_split(np.array([num >> i & 1 for i in range(x_width*y_width-1, -1, -1)]), y_width)).transpose()
         self.draw(B*color, 1-B, x_position, y_position, layer)
 
-    def draw_text(self, text, x_position, y_position, layer=-1, color=2**24-1):
-        i = 0
-        letter = 0
-        while i != len(text):
-            if text[i] == '<':
-                i += 1
-                end = text[i:].find('>')
-                if end == -1:
-                    self.draw_binary(PixelGrid.binary_font['<'], x_position + 7 * letter, y_position, layer=layer,
-                                     color=color)
-                elif end == 0:
-                    self.draw_binary(PixelGrid.binary_font['<'], x_position + 7 * letter, y_position, layer=layer,
+    def draw_string(self, text, x_position, y_position, layer=-1, color=2**24-1):
+        if '<' in text:
+            i = 0
+            letter = 0
+            while i < len(text):
+                if text[i] == '<':
+                    i += 1
+                    end = text[i:].find('>')
+                    if end == -1:
+                        i -= 1
+                        while i < len(text):
+                            self.draw_binary(PixelGrid.binary_font[text[i]], x_position + 7 * letter, y_position, layer=layer,
+                                         color=color)
+                            i += 1
+                            letter += 1
+                    elif end == 0:
+                        self.draw_binary(PixelGrid.binary_font['<'], x_position + 7 * letter, y_position, layer=layer,
+                                         color=color)
+                        i += 1
+                    else:
+                        self.draw_binary(PixelGrid.binary_font[text[i:i+end]], x_position + 7 * letter, y_position, layer=layer,
+                                         color=color)
+                        i += end + 1
+                else:
+                    self.draw_binary(PixelGrid.binary_font[text[i]], x_position + 7 * letter, y_position, layer=layer,
                                      color=color)
                     i += 1
-                else:
-                    self.draw_binary(PixelGrid.binary_font[text[i:i+end]], x_position + 7 * letter, y_position, layer=layer,
-                                     color=color)
-                    i += end + 1
-            else:
-                self.draw_binary(PixelGrid.binary_font[text[i]], x_position + 7 * letter, y_position, layer=layer,
+                letter += 1
+        else:
+            for i, _ in enumerate(text):
+                self.draw_binary(PixelGrid.binary_font[text[i]], x_position + 7 * i, y_position, layer=layer,
                                  color=color)
-                i += 1
-            letter += 1
 
 
+# Context -------------------------------
 class Contexts:
     def __init__(self):
-        self.defined_symbols = set()
-        self.symbolMeaning = {}
+        self.definitions = {}
 
-    def symbol_to_meaning(self, symbol):
-        return self.symbolMeaning[PixelGrid.binary_font[symbol]]
+    def define(self, entity):
+        if entity.symbol not in self.definitions:
+            self.definitions[entity.symbol] = entity
+            return entity
+        else:
+            raise Exception(f'Symbol {entity.symbol} is already defined as {self.definitions[entity.symbol]}. Attempted to define it as {entity}')
 
+    def __add__(self, other):
+        self.definitions |= other.definitions
+        return self
 
+    def is_compatible_with(self, other):
+        # Check all shared symbols for equality
+        for symbol in self.definitions:
+            if symbol in other.definitions:
+                # Check if definitions match
+                if not self.definitions[symbol] == other.definitions[symbol]:
+                    return False
+        return True
+
+# Judgements -------------------------------
 class Judgements:
     def __init__(self, context):
+        self.context = context
         pass
 
 class IsType(Judgements):
@@ -143,8 +159,9 @@ class TermIsType(Judgements):
 
 class TypeEquality(Judgements):
     def __init__(self, context, Type1, Type2):
+        self.Type1 = Type1
+        self.Type2 = Type2
         super().__init__(context)
-
 
 class TermEquality(Judgements):
     def __init__(self, context, Term1, Term2, Type):
@@ -153,29 +170,63 @@ class TermEquality(Judgements):
         self.Type = Type
         super().__init__(context)
 
-
+# Inference Rules -------------------------------
 class InferenceRules:
     def __init__(self):
         pass
 
-
-class ComputationRules:
-    def __init__(self):
-        pass
-
+# Terms -------------------------------
 class Terms:
-    def __init__(self):
-        pass
+    def __init__(self, symbol, Type):
+        self.symbol = symbol
+        self.Type = Type
 
+class constant(Terms):
+    def __init__(self, symbol, Type):
+        super().__init__(symbol, Type)
+
+class Variable(Terms):
+    def __init__(self, symbol, Type):
+        super().__init__(symbol, Type)
+
+class Function(Terms):
+    def __init__(self, symbol, Type):
+        super().__init__(symbol, Type)
+
+# Types -------------------------------
 class Types:
-    def __init__(self):
-        pass
+    def __init__(self, symbol):
+        self.symbol = symbol
+        self.symbols = {symbol}
+        self.term_introduction_rules = set()
+        self.term_elimination_rules = set()
 
+    def add_symbol(self, symbol):
+        self.symbols.add(symbol)
+        return self
+
+# Main -------------------------------
+resize = 1.5
+size = (int(600 * resize), int(400 * resize))
+pygame.init()
+pygame.display.set_caption("Four Space")
+screen = pygame.display.set_mode(size)
+clock = pygame.time.Clock()
+running = True
+pygame.display.set_icon(pygame.image.load('FourSpaceLogo.png'))
+
+# hoi is the main canvas. This gets drawn to screen every frame.
+hoi = np.zeros(size)
 n = 4
 canvas = PixelGrid(size, n, hoi)
-canvas.draw_text('1042 <le> 2048', 30, 30)
+canvas.draw_string('1042 <ge> 2', 30, 30)
 
+cont = Contexts()
+Natural_Numbers = cont.define(Types('Nat'))
+nat_zero = cont.define(constant('0', Natural_Numbers))
+print(cont.definitions)
 
+# Pygame Loop -----------------------------------------------
 
 while running:
     for event in pygame.event.get():
