@@ -119,6 +119,8 @@ class PixelGrid:
 class Contexts:
     def __init__(self):
         self.definitions = {}
+        self.assumptions = {}
+        self.theorems = {}
 
     def define(self, entity):
         if entity.symbol not in self.definitions:
@@ -138,6 +140,11 @@ class Contexts:
                 # Check if definitions match
                 if not self.definitions[symbol] == other.definitions[symbol]:
                     return False
+        for assume in self.assumptions:
+            if assume in other.assumptions:
+                if not self.assumptions[assume] == other.assumptions[assume]:
+                    return False
+            else: return False
         return True
 
 # Judgements -------------------------------
@@ -151,11 +158,17 @@ class IsType(Judgements):
         self.Type = Type
         super().__init__(context)
 
+    def __eq__(self, other):
+        return type(self) == type(other) and self.Type == other.Type
+
 class TermIsType(Judgements):
     def __init__(self, context, term, Type):
         self.term = term
         self.Type = Type
         super().__init__(context)
+
+    def __eq__(self, other):
+        return type(self) == type(other) and self.Type == other.Type and self.term == other.term
 
 class TypeEquality(Judgements):
     def __init__(self, context, Type1, Type2):
@@ -163,12 +176,18 @@ class TypeEquality(Judgements):
         self.Type2 = Type2
         super().__init__(context)
 
+    def __eq__(self, other):
+        return type(self) == type(other) and self.Type1 == other.Type1 and self.Type2 == other.Type2
+
 class TermEquality(Judgements):
     def __init__(self, context, Term1, Term2, Type):
         self.Term1 = Term1
         self.Term2 = Term2
         self.Type = Type
         super().__init__(context)
+
+    def __eq__(self, other):
+        return type(self) == type(other) and self.Term1 == other.Term1 and self.Term2 == other.Term2 and self.Type == other.Type
 
 # Inference Rules -------------------------------
 class InferenceRules:
@@ -217,9 +236,9 @@ pygame.display.set_icon(pygame.image.load('FourSpaceLogo.png'))
 
 # hoi is the main canvas. This gets drawn to screen every frame.
 hoi = np.zeros(size)
-n = 4
+n = 10
 canvas = PixelGrid(size, n, hoi)
-canvas.draw_string('1042 <ge> 2', 30, 30)
+canvas.draw_string("hello Jack", 0, 0)
 
 cont = Contexts()
 Natural_Numbers = cont.define(Types('Nat'))
@@ -242,4 +261,5 @@ while running:
     clock.tick(60)  # limits FPS to 60
     if clock.get_fps() < 58 and clock.get_fps():
         print(clock.get_fps())
+
 pygame.quit()
