@@ -1,10 +1,13 @@
 import os
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import pygame
+from collections import deque
 import numpy as np
+import re
 
 class PixelGrid:
-    binary_font = {' ': 0, 'A': 75247420147096911872, 'B': 555871685767213285376, 'C': 260722531473394434048,
+    binary_font = {' ': 0, '': 0,
+                   'A': 75247420147096911872, 'B': 555871685767213285376, 'C': 260722531473394434048,
                    'D': 555871571418003996672, 'E': 574173188683679629312, 'F': 574173188683679137792,
                    'G': 260722531680089735168, 'H': 316064021605081710592, 'I': 572430066098342166528,
                    'J': 129272458469370691584, 'K': 316211488173855375360, 'L': 297471904432734044160,
@@ -30,7 +33,7 @@ class PixelGrid:
                    "6": 260722654687953092608, "7": 571994325244371533824, "8": 260723639850371579904,
                    "9": 260723666092621758464}
 
-    def __init__(self, screen_size, pixel_size, main_canvas, background_color=707322):
+    def __init__(self, screen_size, pixel_size, main_canvas, background_color=2736806):
         self.screen_size = screen_size
         self.pixel_size = pixel_size
         self.grid_size = (screen_size[0] // pixel_size, screen_size[1] // pixel_size)
@@ -41,6 +44,11 @@ class PixelGrid:
 
     def add_blank_layer(self):
         self.layers.append((np.zeros(self.grid_size), np.ones(self.grid_size)))
+
+    def erase(self, layer, x1, y1, x2, y2):
+        color, transparency = self.layers[layer]
+        color[x1:x2, y1:y2] = 0
+        transparency[x1:x2, y1:y2] = 1
 
     def apply_layers(self):
         sum_layers = np.zeros(self.grid_size) + self.background_color
@@ -77,152 +85,146 @@ class PixelGrid:
         transparency_slice = self.layers[layer][1][x_position:x_position+x_width, y_position:y_position+y_width]
         transparency_slice *= transparency_array
 
-    def draw_binary(self, num, x_position, y_position, color=2**24-1, layer=0, x_width=7, y_width=12):
-        B = np.array(np.array_split(np.array([num >> i & 1 for i in range(x_width*y_width-1, -1, -1)]), y_width)).transpose()
-        self.draw(B*color, 1-B, x_position, y_position, layer)
-
-    def draw_string(self, text, x_position, y_position, layer=-1, color=2**24-1):
-        if '<' in text:
-            i = 0
-            letter = 0
-            while i < len(text):
-                if text[i] == '<':
-                    i += 1
-                    end = text[i:].find('>')
-                    if end == -1:
-                        i -= 1
-                        while i < len(text):
-                            self.draw_binary(PixelGrid.binary_font[text[i]], x_position + 7 * letter, y_position, layer=layer,
-                                         color=color)
-                            i += 1
-                            letter += 1
-                    elif end == 0:
-                        self.draw_binary(PixelGrid.binary_font['<'], x_position + 7 * letter, y_position, layer=layer,
-                                         color=color)
-                        i += 1
-                    else:
-                        self.draw_binary(PixelGrid.binary_font[text[i:i+end]], x_position + 7 * letter, y_position, layer=layer,
-                                         color=color)
-                        i += end + 1
-                else:
-                    self.draw_binary(PixelGrid.binary_font[text[i]], x_position + 7 * letter, y_position, layer=layer,
-                                     color=color)
-                    i += 1
-                letter += 1
+    def draw_binary(self, num, x_position, y_position, color=2**24-1, background_color=None, layer=0, x_width=7, y_width=12):
+        B = np.array(
+            np.array_split(np.array([num >> i & 1 for i in range(x_width * y_width - 1, -1, -1)]), y_width)).transpose()
+        if background_color is None:
+            self.draw(B*color, 1-B, x_position, y_position, layer=layer)
         else:
-            for i, _ in enumerate(text):
-                self.draw_binary(PixelGrid.binary_font[text[i]], x_position + 7 * i, y_position, layer=layer,
-                                 color=color)
+            self.draw(B*color+(1-B)*background_color, np.zeros((x_width, y_width)), x_position, y_position, layer=layer)
+
+    def draw_string(self, text, x_position, y_position, layer=-1, color=2**24-1, background_color=None):
+        letter = x_position
+        i = 0
+        while i<len(text):
+            if text[i] == '<':
+                command = text[i+1:text.find('>', i+1)]
+                self.draw_binary(PixelGrid.binary_font[command], letter, y_position, layer=layer, color=color,
+                             background_color=background_color)
+                i += len(command) + 1
+            else:
+                self.draw_binary(PixelGrid.binary_font[text[i]], letter, y_position, layer=layer, color=color,
+                                 background_color=background_color)
+            letter += 7
+            i += 1
+        return letter, y_position + 12
+
+    def draw_string_with_indexing(self, text, x_position, y_position, layer=-1, color=2**24-1, background_color=None):
+        letter = x_position
+        indexing = []
+        i = 0
+        while i < len(text):
+            indexing.append(i)
+            if text[i] == '<':
+                command = text[i + 1:text.find('>', i + 1)]
+                self.draw_binary(PixelGrid.binary_font[command], letter, y_position, layer=layer, color=color,
+                                 background_color=background_color)
+                i += len(command) + 1
+            else:
+                self.draw_binary(PixelGrid.binary_font[text[i]], letter, y_position, layer=layer, color=color,
+                                 background_color=background_color)
+            letter += 7
+            i += 1
+        return letter, y_position + 12, indexing
 
 
-# Context -------------------------------
-class Contexts:
-    def __init__(self):
-        self.definitions = {}
-        self.assumptions = {}
-        self.theorems = {}
+# String Rewrite Rule ----------
+class Ground:
+    def __init__(self, left, right):
+        self.left = left
+        self.right = right
 
-    def define(self, entity):
-        if entity.symbol not in self.definitions:
-            self.definitions[entity.symbol] = entity
-            return entity
-        else:
-            raise Exception(f'Symbol {entity.symbol} is already defined as {self.definitions[entity.symbol]}. Attempted to define it as {entity}')
+    def no_check_replace(self, text, index):
+        return text[:index] + self.right + text[index+len(self.left):]
 
-    def __add__(self, other):
-        self.definitions |= other.definitions
-        return self
+    def text_index_to_match_index(self, text):
+        text_index_to_match_index = {}
+        matches = reversed(list(re.finditer(f'(?={self.left})', text)))
+        last_match_index = len(text)
+        for _ in matches:
+            _ = _.start()
+            for i in range(_, min(_+len(self.left), last_match_index)):
+                text_index_to_match_index[i] = _
+            last_match_index = _
+        return text_index_to_match_index
 
-    def is_compatible_with(self, other):
-        # Check all shared symbols for equality
-        for symbol in self.definitions:
-            if symbol in other.definitions:
-                # Check if definitions match
-                if not self.definitions[symbol] == other.definitions[symbol]:
-                    return False
-        for assume in self.assumptions:
-            if assume in other.assumptions:
-                if not self.assumptions[assume] == other.assumptions[assume]:
-                    return False
-            else: return False
-        return True
 
-# Judgements -------------------------------
-class Judgements:
-    def __init__(self, context):
-        self.context = context
-        pass
+# Puzzle ----------
+class Puzzle:
+    instances = []
+    def __init__(self, pGrid, start, end, rules, x_position, y_position, layer=-1, color=2**24-1, background_color=None,
+                 highlight_color=12734249):
+        Puzzle.instances.append(self)
+        self.canvas = pGrid
+        self.x_position = x_position
+        self.y_position = y_position
+        self.path = deque([start])
+        self.end = end
+        self.current_rule = rules[0]
+        self.rules = rules
+        self.layer = layer
+        self.color = color
+        self.background_color = background_color
+        self.highlight_color = highlight_color
+        self.x_position_end, self.y_position_end, self.indexing = pGrid.draw_string_with_indexing(start, x_position,
+                                        y_position, layer=layer, color=color, background_color=background_color)
+        self.is_hovering = False
+        self.matched_index = None
+        self.text_index_to_match_index = self.current_rule.text_index_to_match_index(start)
 
-class IsType(Judgements):
-    def __init__(self, context, Type):
-        self.Type = Type
-        super().__init__(context)
+    def pixel_to_text_index(self, x_pixel):
+        return self.indexing[(x_pixel - self.x_position)//7]
 
-    def __eq__(self, other):
-        return type(self) == type(other) and self.Type == other.Type
+    def is_within(self, x, y):
+        return (self.x_position <= x < self.x_position_end
+            and self.y_position <= y < self.y_position_end)
 
-class TermIsType(Judgements):
-    def __init__(self, context, term, Type):
-        self.term = term
-        self.Type = Type
-        super().__init__(context)
+    def mouse_match_select(self, pos):
+        x, y = pos[0] // self.canvas.pixel_size, pos[1] // self.canvas.pixel_size
+        if self.is_within(x, y):
+            _ = self.pixel_to_text_index(x)
+            if _ in self.text_index_to_match_index:
+                self.is_hovering = True
+                self.matched_index = self.text_index_to_match_index[_]
+                self.highlight_match(self.text_index_to_match_index[_])
+            elif self.is_hovering:
+                self.is_hovering = False
+                self.un_highlight()
+        elif self.is_hovering:
+            self.is_hovering = False
+            self.un_highlight()
 
-    def __eq__(self, other):
-        return type(self) == type(other) and self.Type == other.Type and self.term == other.term
+    def highlight_match(self, index):
+        self.canvas.erase(self.layer, self.x_position, self.y_position, self.x_position_end, self.y_position_end)
+        hl_start = index
+        hl_end = hl_start + len(self.current_rule.left)
+        x_end = self.canvas.draw_string(self.path[-1][:hl_start],
+                                               self.x_position, self.y_position, layer=self.layer, color=self.color,
+                                               background_color=self.background_color)[0]
+        x_end = self.canvas.draw_string(self.path[-1][hl_start:hl_end], x_end,
+                                               self.y_position, layer=self.layer, color=self.color,
+                                               background_color=self.highlight_color)[0]
+        self.canvas.draw_string(self.path[-1][hl_end:], x_end,
+                                self.y_position, layer=self.layer, color=self.color,
+                                background_color=self.background_color)
 
-class TypeEquality(Judgements):
-    def __init__(self, context, Type1, Type2):
-        self.Type1 = Type1
-        self.Type2 = Type2
-        super().__init__(context)
+    def un_highlight(self):
+        self.canvas.erase(self.layer, self.x_position, self.y_position, self.x_position_end, self.y_position_end)
+        self.canvas.draw_string(self.path[-1], self.x_position, self.y_position, layer=self.layer, color=self.color,
+                               background_color=self.background_color)
 
-    def __eq__(self, other):
-        return type(self) == type(other) and self.Type1 == other.Type1 and self.Type2 == other.Type2
+    def apply_rule(self, pos):
+        if self.is_hovering:
+            new_node = self.current_rule.no_check_replace(self.path[-1], self.matched_index)
+            self.path.append(new_node)
+            self.canvas.erase(self.layer, self.x_position, self.y_position, self.x_position_end, self.y_position_end)
+            self.x_position_end, self.y_position_end = self.canvas.draw_string(new_node, self.x_position, self.y_position, layer=self.layer,
+                                                                         color=self.color, background_color=self.background_color)
+            self.text_index_to_match_index = self.current_rule.text_index_to_match_index(new_node)
+            self.mouse_match_select(pos)
 
-class TermEquality(Judgements):
-    def __init__(self, context, Term1, Term2, Type):
-        self.Term1 = Term1
-        self.Term2 = Term2
-        self.Type = Type
-        super().__init__(context)
 
-    def __eq__(self, other):
-        return type(self) == type(other) and self.Term1 == other.Term1 and self.Term2 == other.Term2 and self.Type == other.Type
 
-# Inference Rules -------------------------------
-class InferenceRules:
-    def __init__(self):
-        pass
-
-# Terms -------------------------------
-class Terms:
-    def __init__(self, symbol, Type):
-        self.symbol = symbol
-        self.Type = Type
-
-class constant(Terms):
-    def __init__(self, symbol, Type):
-        super().__init__(symbol, Type)
-
-class Variable(Terms):
-    def __init__(self, symbol, Type):
-        super().__init__(symbol, Type)
-
-class Function(Terms):
-    def __init__(self, symbol, Type):
-        super().__init__(symbol, Type)
-
-# Types -------------------------------
-class Types:
-    def __init__(self, symbol):
-        self.symbol = symbol
-        self.symbols = {symbol}
-        self.term_introduction_rules = set()
-        self.term_elimination_rules = set()
-
-    def add_symbol(self, symbol):
-        self.symbols.add(symbol)
-        return self
 
 # Main -------------------------------
 resize = 1.5
@@ -238,12 +240,10 @@ pygame.display.set_icon(pygame.image.load('FourSpaceLogo.png'))
 hoi = np.zeros(size)
 n = 10
 canvas = PixelGrid(size, n, hoi)
-canvas.draw_string("hello Jack", 0, 0)
 
-cont = Contexts()
-Natural_Numbers = cont.define(Types('Nat'))
-nat_zero = cont.define(constant('0', Natural_Numbers))
-print(cont.definitions)
+R = Ground('aaa', 'b')
+boop = Puzzle(canvas, 'aaaaaaaaaaaa', 'aabb', [R], 3, 12, background_color=0)
+
 
 # Pygame Loop -----------------------------------------------
 
@@ -251,15 +251,19 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-        if event.type == pygame.KEYDOWN:
-            pass
+        elif event.type == pygame.MOUSEMOTION:
+            boop.mouse_match_select(event.pos)
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                boop.apply_rule(event.pos)
+
 
     canvas.apply_layers()
     pygame.surfarray.blit_array(screen, hoi)
     pygame.display.flip()
 
     clock.tick(60)  # limits FPS to 60
-    if clock.get_fps() < 58 and clock.get_fps():
-        print(clock.get_fps())
+    #if clock.get_fps() < 58 and clock.get_fps():
+    #    print(clock.get_fps())
 
 pygame.quit()
