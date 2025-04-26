@@ -33,14 +33,19 @@ class PixelGrid:
                    "6": 260722654687953092608, "7": 571994325244371533824, "8": 260723639850371579904,
                    "9": 260723666092621758464}
 
-    def __init__(self, screen_size, pixel_size, main_canvas, background_color=2736806):
+    def __init__(self, screen_size, pixel_size, background_color=2736806):
         self.screen_size = screen_size
+        self.shift = (0, 0)
         self.pixel_size = pixel_size
         self.grid_size = (screen_size[0] // pixel_size, screen_size[1] // pixel_size)
-        self.main_canvas = main_canvas
+        self.canvas_size = (self.grid_size[0] * self.pixel_size, self.grid_size[1] * self.pixel_size)
+        self.main_canvas = np.zeros(screen_size)
         self.background_color = background_color
         self.layers = []
         self.add_blank_layer()
+
+    def window_resize_shift(self, x, y):
+        self.shift = ((x - self.screen_size[0]) // 2, (y - self.screen_size[1]) // 2)
 
     def add_blank_layer(self):
         self.layers.append((np.zeros(self.grid_size), np.ones(self.grid_size)))
@@ -55,8 +60,8 @@ class PixelGrid:
         for color, transparency in self.layers:
             sum_layers *= transparency
             sum_layers += color
-        Y = self.main_canvas.shape[0]
-        X = self.main_canvas.shape[1]
+        Y = self.canvas_size[0]
+        X = self.canvas_size[1]
         k = self.pixel_size
         for y in range(0, k):
             for x in range(0, k):
@@ -180,7 +185,7 @@ class Puzzle:
             and self.y_position <= y < self.y_position_end)
 
     def mouse_match_select(self, pos):
-        x, y = pos[0] // self.canvas.pixel_size, pos[1] // self.canvas.pixel_size
+        x, y = (pos[0] - self.canvas.shift[0]) // self.canvas.pixel_size, (pos[1] - self.canvas.shift[1]) // self.canvas.pixel_size
         if self.is_within(x, y):
             _ = self.pixel_to_text_index(x)
             if _ in self.text_index_to_match_index:
@@ -227,26 +232,24 @@ class Puzzle:
 
 
 # Main -------------------------------
-resize = 1.5
-size = (int(600 * resize), int(400 * resize))
+resize = 2
+n = 3 * resize
+size = (int(600 * resize), int(360 * resize))
+
 pygame.init()
 pygame.display.set_caption("Four Space")
-screen = pygame.display.set_mode(size)
+screen = pygame.display.set_mode(size, pygame.RESIZABLE)
+game_region = pygame.Surface(size)
 clock = pygame.time.Clock()
 running = True
 pygame.display.set_icon(pygame.image.load('FourSpaceLogo.png'))
+canvas = PixelGrid(size, n)
 
-# hoi is the main canvas. This gets drawn to screen every frame.
-hoi = np.zeros(size)
-n = 10
-canvas = PixelGrid(size, n, hoi)
-
+# hoi -------------------------------
 R = Ground('aaa', 'b')
 boop = Puzzle(canvas, 'aaaaaaaaaaaa', 'aabb', [R], 3, 12, background_color=0)
 
-
 # Pygame Loop -----------------------------------------------
-
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -256,10 +259,12 @@ while running:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 boop.apply_rule(event.pos)
-
+        elif event.type == pygame.WINDOWRESIZED:
+            canvas.window_resize_shift(event.x, event.y)
 
     canvas.apply_layers()
-    pygame.surfarray.blit_array(screen, hoi)
+    pygame.surfarray.blit_array(game_region, canvas.main_canvas)
+    screen.blit(game_region, canvas.shift)
     pygame.display.flip()
 
     clock.tick(60)  # limits FPS to 60
