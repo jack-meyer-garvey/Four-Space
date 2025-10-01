@@ -1,7 +1,4 @@
 import os
-
-from pygame.examples.cursors import image
-
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import pygame
 from collections import deque
@@ -137,8 +134,6 @@ class PixelGrid:
             letter += 7
             i += 1
         return letter, y_position + 12, indexing
-
-import numpy as np
 
 def default_image(x_length=16, y_length=16, color=2**24 - 1, thickness=2):
     if x_length < 2 or y_length < 2:
@@ -370,7 +365,9 @@ canvas = PixelGrid(size, n)
 controller = controls(canvas)
 gravity = lambda obj: np.array([0, 300 * obj.mass])
 standard_forces = [gravity]
-boi = dynamic_canvas_object(canvas, np.array([20, 100]), np.array([200, -200]), 10, forces=standard_forces)
+canvas.add_blank_layer()
+boi = dynamic_canvas_object(canvas, np.array([28, 100]), np.array([200, -200]), 10, forces=standard_forces)
+hoi = dynamic_canvas_object(canvas, np.array([20, 200]), np.array([210, -300]), 10, forces=standard_forces, layer=1)
 # Pygame Loop -----------------------------------------------
 delta_time = 17
 while running:
@@ -387,7 +384,7 @@ while running:
     screen.blit(game_region, canvas.shift)
     pygame.display.flip()
 
-    delta_time = clock.tick(60) # limits FPS to 60
+    delta_time = clock.tick(120) # limits FPS to 60
     #if clock.get_fps() < 58 and clock.get_fps():
     #    print(clock.get_fps())
 
