@@ -1,4 +1,7 @@
 import os
+
+from pygame.examples.cursors import image
+
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import pygame
 from collections import deque
@@ -44,8 +47,11 @@ class PixelGrid:
         self.layers = []
         self.add_blank_layer()
 
-    def window_resize_shift(self, x, y):
-        self.shift = ((x - self.screen_size[0]) // 2, (y - self.screen_size[1]) // 2)
+        self.clickable = set()
+        self.dynamic = set()
+
+    def window_resize_shift(self, event_with_x_and_y):
+        self.shift = ((event_with_x_and_y.x - self.screen_size[0]) // 2, (event_with_x_and_y.y - self.screen_size[1]) // 2)
 
     def add_blank_layer(self):
         self.layers.append((np.zeros(self.grid_size), np.ones(self.grid_size)))
@@ -98,7 +104,7 @@ class PixelGrid:
         else:
             self.draw(B*color+(1-B)*background_color, np.zeros((x_width, y_width)), x_position, y_position, layer=layer)
 
-    def draw_string(self, text, x_position, y_position, layer=-1, color=2**24-1, background_color=None):
+    def draw_string(self, text, x_position, y_position, layer=0, color=2**24-1, background_color=None):
         letter = x_position
         i = 0
         while i<len(text):
@@ -114,7 +120,7 @@ class PixelGrid:
             i += 1
         return letter, y_position + 12
 
-    def draw_string_with_indexing(self, text, x_position, y_position, layer=-1, color=2**24-1, background_color=None):
+    def draw_string_with_indexing(self, text, x_position, y_position, layer=0, color=2**24-1, background_color=None):
         letter = x_position
         indexing = []
         i = 0
@@ -132,6 +138,92 @@ class PixelGrid:
             i += 1
         return letter, y_position + 12, indexing
 
+import numpy as np
+
+def default_image(x_length=16, y_length=16, color=2**24 - 1, thickness=2):
+    if x_length < 2 or y_length < 2:
+        raise ValueError("x_length and y_length must be at least 2 to form a border.")
+    if x_length < 2 * thickness or y_length < 2 * thickness:
+        raise ValueError("x_length and y_length must be at least twice the thickness.")
+    B = np.zeros((y_length, x_length), dtype=int)
+    B[:thickness, :] = 1
+    B[-thickness:, :] = 1
+    B[:, :thickness] = 1
+    B[:, -thickness:] = 1
+
+    color_layer = B * color
+    mask_layer = 1 - B
+
+    return [color_layer, mask_layer]
+
+
+
+# Canvas Objects ----------
+class dynamic_canvas_object:
+    def __init__(self, pGrid, position, velocity, mass, layer=0, sprite=None, forces = None):
+        if sprite is None:
+            sprite = default_image()
+        if forces is None:
+            forces = []
+        self.canvas = pGrid
+        self.canvas.dynamic.add(self)
+        self.position = position
+        self.velocity = velocity
+        self.mass = mass
+        self.layer = layer
+        self.image = sprite
+        self.forces = forces
+        self.draw()
+
+    def pixel_position(self):
+        return np.array([round(self.position[0]), round(self.position[1])])
+
+    def draw(self):
+        self.canvas.draw(*self.image, *self.pixel_position(), self.layer)
+
+    def erase(self):
+        self.canvas.erase(self.layer, *self.pixel_position(), *(self.pixel_position()+self.image[0].shape))
+
+def update_physics(pGrid, dt):
+    dt = dt / 1000
+    for obj in pGrid.dynamic:
+        obj.erase()
+        acceleration = sum((f(obj) for f in obj.forces)) / obj.mass
+        obj.position = obj.position + obj.velocity * dt + 0.5 * acceleration * dt ** 2
+        obj.velocity = obj.velocity + acceleration * dt
+        obj.draw()
+
+class clickable_canvas_object:
+    def __init__(self, pGrid, x_position, y_position, x_position_end, y_position_end):
+        self.canvas = pGrid
+        pGrid.clickable.add(self)
+        self.meta_data = None
+        self.meta_data_memory = None
+        self.x_position = x_position
+        self.y_position = y_position
+        self.x_position_end = x_position_end
+        self.y_position_end = y_position_end
+
+
+    def is_within(self, x, y):
+        return (self.x_position <= x < self.x_position_end
+            and self.y_position <= y < self.y_position_end)
+
+    def mouse_select(self, x, y):
+        if self.is_within(x, y):
+            self.meta_data = True
+        else:
+            self.meta_data = None
+
+    def mouse_click_down(self):
+        self.meta_data_memory = self.meta_data
+
+    def mouse_click_up(self, x, y):
+        if self.meta_data is not None and self.meta_data == self.meta_data_memory:
+            self.activate(x, y)
+
+    def activate(self, x, y):
+        print('You clicked at ({}, {})'.format(x, y))
 
 # String Rewrite Rule ----------
 class Ground:
@@ -155,48 +247,41 @@ class Ground:
 
 
 # Puzzle ----------
-class Puzzle:
-    instances = []
-    def __init__(self, pGrid, start, end, rules, x_position, y_position, layer=-1, color=2**24-1, background_color=None,
-                 highlight_color=12734249):
-        Puzzle.instances.append(self)
-        self.canvas = pGrid
-        self.x_position = x_position
-        self.y_position = y_position
+class Puzzle(clickable_canvas_object):
+    def __init__(self, pGrid, start, end, rules, x_position, y_position, layer=0, text_color=2 ** 24 - 1,
+                 background_color=None, text_highlight_color=2**24-1, background_highlight_color=12734249,
+                 text_hold_color = 2 ** 24 - 1, background_hold_color = 4360181):
+        # Change
         self.path = deque([start])
         self.end = end
         self.current_rule = rules[0]
         self.rules = rules
         self.layer = layer
-        self.color = color
+        self.text_color = text_color
         self.background_color = background_color
-        self.highlight_color = highlight_color
-        self.x_position_end, self.y_position_end, self.indexing = pGrid.draw_string_with_indexing(start, x_position,
-                                        y_position, layer=layer, color=color, background_color=background_color)
-        self.is_hovering = False
-        self.matched_index = None
+        self.text_highlight_color = text_highlight_color
+        self.background_highlight_color = background_highlight_color
+        self.text_hold_color = text_hold_color
+        self.background_hold_color = background_hold_color
+        x_position_end, y_position_end, self.indexing = pGrid.draw_string_with_indexing(start, x_position,
+                                                                                        y_position, layer=layer, color=text_color, background_color=background_color)
+        super().__init__(pGrid, x_position, y_position, x_position_end, y_position_end)
         self.text_index_to_match_index = self.current_rule.text_index_to_match_index(start)
 
     def pixel_to_text_index(self, x_pixel):
         return self.indexing[(x_pixel - self.x_position)//7]
 
-    def is_within(self, x, y):
-        return (self.x_position <= x < self.x_position_end
-            and self.y_position <= y < self.y_position_end)
-
-    def mouse_match_select(self, pos):
-        x, y = (pos[0] - self.canvas.shift[0]) // self.canvas.pixel_size, (pos[1] - self.canvas.shift[1]) // self.canvas.pixel_size
+    def mouse_select(self, x, y):
         if self.is_within(x, y):
             _ = self.pixel_to_text_index(x)
             if _ in self.text_index_to_match_index:
-                self.is_hovering = True
-                self.matched_index = self.text_index_to_match_index[_]
+                self.meta_data = self.text_index_to_match_index[_]
                 self.highlight_match(self.text_index_to_match_index[_])
-            elif self.is_hovering:
-                self.is_hovering = False
+            elif self.meta_data is not None:
+                self.meta_data = None
                 self.un_highlight()
-        elif self.is_hovering:
-            self.is_hovering = False
+        elif self.meta_data is not None:
+            self.meta_data = None
             self.un_highlight()
 
     def highlight_match(self, index):
@@ -204,36 +289,72 @@ class Puzzle:
         hl_start = index
         hl_end = hl_start + len(self.current_rule.left)
         x_end = self.canvas.draw_string(self.path[-1][:hl_start],
-                                               self.x_position, self.y_position, layer=self.layer, color=self.color,
-                                               background_color=self.background_color)[0]
-        x_end = self.canvas.draw_string(self.path[-1][hl_start:hl_end], x_end,
-                                               self.y_position, layer=self.layer, color=self.color,
-                                               background_color=self.highlight_color)[0]
+                                        self.x_position, self.y_position, layer=self.layer, color=self.text_color,
+                                        background_color=self.background_color)[0]
+        if self.meta_data is not None and self.meta_data == self.meta_data_memory:
+            x_end = self.canvas.draw_string(self.path[-1][hl_start:hl_end], x_end,
+                                            self.y_position, layer=self.layer, color=self.text_hold_color,
+                                            background_color=self.background_hold_color)[0]
+        else:
+            x_end = self.canvas.draw_string(self.path[-1][hl_start:hl_end], x_end,
+                                            self.y_position, layer=self.layer, color=self.text_highlight_color,
+                                            background_color=self.background_highlight_color)[0]
         self.canvas.draw_string(self.path[-1][hl_end:], x_end,
-                                self.y_position, layer=self.layer, color=self.color,
+                                self.y_position, layer=self.layer, color=self.text_color,
                                 background_color=self.background_color)
 
     def un_highlight(self):
         self.canvas.erase(self.layer, self.x_position, self.y_position, self.x_position_end, self.y_position_end)
-        self.canvas.draw_string(self.path[-1], self.x_position, self.y_position, layer=self.layer, color=self.color,
-                               background_color=self.background_color)
+        self.canvas.draw_string(self.path[-1], self.x_position, self.y_position, layer=self.layer, color=self.text_color,
+                                background_color=self.background_color)
 
-    def apply_rule(self, pos):
-        if self.is_hovering:
-            new_node = self.current_rule.no_check_replace(self.path[-1], self.matched_index)
-            self.path.append(new_node)
-            self.canvas.erase(self.layer, self.x_position, self.y_position, self.x_position_end, self.y_position_end)
-            self.x_position_end, self.y_position_end = self.canvas.draw_string(new_node, self.x_position, self.y_position, layer=self.layer,
-                                                                         color=self.color, background_color=self.background_color)
-            self.text_index_to_match_index = self.current_rule.text_index_to_match_index(new_node)
-            self.mouse_match_select(pos)
+    def activate(self, x, y):
+        new_node = self.current_rule.no_check_replace(self.path[-1], self.meta_data)
+        self.path.append(new_node)
+        self.canvas.erase(self.layer, self.x_position, self.y_position, self.x_position_end, self.y_position_end)
+        self.x_position_end, self.y_position_end = self.canvas.draw_string(new_node, self.x_position, self.y_position, layer=self.layer,
+                                                                           color=self.text_color, background_color=self.background_color)
+        self.text_index_to_match_index = self.current_rule.text_index_to_match_index(new_node)
+        self.mouse_select(x, y)
 
+
+# map events to functions -------------------------------
+class controls:
+    def __init__(self, pGrid):
+        self.canvas = pGrid
+        self.last_click = None
+        self.event_key = {pygame.MOUSEMOTION: self.mouse_motion,
+                          pygame.WINDOWRESIZED: self.canvas.window_resize_shift,
+                          pygame.MOUSEBUTTONDOWN: self.mouse_button_down,
+                          pygame.MOUSEBUTTONUP: self.mouse_button_up}
+
+    def __call__(self, event_instance):
+        if event_instance.type in self.event_key:
+            self.event_key[event_instance.type](event)
+
+    def mouse_motion(self, mouse_event):
+        x, y = ((mouse_event.pos[0] - self.canvas.shift[0]) // self.canvas.pixel_size,
+                (mouse_event.pos[1] - self.canvas.shift[1]) // self.canvas.pixel_size)
+        for p in self.canvas.clickable:
+            p.mouse_select(x, y)
+
+    def mouse_button_down(self, mouse_event):
+        if mouse_event.button == 1:
+            for p in self.canvas.clickable:
+                p.mouse_click_down()
+
+    def mouse_button_up(self, mouse_event):
+        x, y = ((mouse_event.pos[0] - self.canvas.shift[0]) // self.canvas.pixel_size,
+                (mouse_event.pos[1] - self.canvas.shift[1]) // self.canvas.pixel_size)
+        if mouse_event.button == 1:
+            for p in self.canvas.clickable:
+                p.mouse_click_up(x, y)
 
 
 
 # Main -------------------------------
 resize = 2
-n = 3 * resize
+n = 1 * resize
 size = (int(600 * resize), int(360 * resize))
 
 pygame.init()
@@ -243,31 +364,30 @@ game_region = pygame.Surface(size)
 clock = pygame.time.Clock()
 running = True
 pygame.display.set_icon(pygame.image.load('FourSpaceLogo.png'))
-canvas = PixelGrid(size, n)
 
 # hoi -------------------------------
-R = Ground('aaa', 'b')
-boop = Puzzle(canvas, 'aaaaaaaaaaaa', 'aabb', [R], 3, 12, background_color=0)
-
+canvas = PixelGrid(size, n)
+controller = controls(canvas)
+gravity = lambda obj: np.array([0, 300 * obj.mass])
+standard_forces = [gravity]
+boi = dynamic_canvas_object(canvas, np.array([20, 100]), np.array([200, -200]), 10, forces=standard_forces)
 # Pygame Loop -----------------------------------------------
+delta_time = 17
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-        elif event.type == pygame.MOUSEMOTION:
-            boop.mouse_match_select(event.pos)
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:
-                boop.apply_rule(event.pos)
-        elif event.type == pygame.WINDOWRESIZED:
-            canvas.window_resize_shift(event.x, event.y)
+        else:
+            controller(event)
+
+    update_physics(canvas, delta_time)
 
     canvas.apply_layers()
     pygame.surfarray.blit_array(game_region, canvas.main_canvas)
     screen.blit(game_region, canvas.shift)
     pygame.display.flip()
 
-    clock.tick(60)  # limits FPS to 60
+    delta_time = clock.tick(60) # limits FPS to 60
     #if clock.get_fps() < 58 and clock.get_fps():
     #    print(clock.get_fps())
 
