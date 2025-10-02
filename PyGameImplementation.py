@@ -46,6 +46,7 @@ class PixelGrid:
 
         self.clickable = set()
         self.dynamic = set()
+        self.collision = set()
 
     def window_resize_shift(self, event_with_x_and_y):
         self.shift = ((event_with_x_and_y.x - self.screen_size[0]) // 2, (event_with_x_and_y.y - self.screen_size[1]) // 2)
@@ -154,30 +155,175 @@ def default_image(x_length=16, y_length=16, color=2**24 - 1, thickness=2):
 
 
 # Canvas Objects ----------
-class dynamic_canvas_object:
-    def __init__(self, pGrid, position, velocity, mass, layer=0, sprite=None, forces = None):
+class PhysicalCanvasObject:
+    def __init__(self, *, pGrid, position, layer=0, sprite=None, sprite_offset=None):
         if sprite is None:
             sprite = default_image()
-        if forces is None:
-            forces = []
+        if sprite_offset is None:
+            sprite_offset = np.array([0, 0])
         self.canvas = pGrid
-        self.canvas.dynamic.add(self)
         self.position = position
-        self.velocity = velocity
-        self.mass = mass
         self.layer = layer
         self.image = sprite
-        self.forces = forces
+        self.image_offset = sprite_offset
         self.draw()
 
     def pixel_position(self):
-        return np.array([round(self.position[0]), round(self.position[1])])
+        return np.array([round(self.position[0]), round(self.position[1])])+self.image_offset
 
     def draw(self):
         self.canvas.draw(*self.image, *self.pixel_position(), self.layer)
 
     def erase(self):
         self.canvas.erase(self.layer, *self.pixel_position(), *(self.pixel_position()+self.image[0].shape))
+
+class Dynamic(PhysicalCanvasObject):
+    def __init__(self, *, pGrid, position, velocity, mass, layer=0, sprite=None, forces = None):
+        super().__init__(pGrid=pGrid, position=position, layer=layer, sprite=sprite)
+        self.canvas.dynamic.add(self)
+        self.velocity = velocity
+        self.mass = mass
+        self.forces = forces
+
+class Collision(PhysicalCanvasObject):
+    def __init__(self, *, pGrid, position, layer=0, sprite=None, collision_offset=None, collision_width=None):
+        super().__init__(pGrid=pGrid, position=position, layer=layer, sprite=sprite)
+        if collision_offset is None:
+            collision_offset = np.array([0, 0])
+        if collision_width is None:
+            collision_width = np.array([16, 16])
+        self.collision_offset = collision_offset
+        self.collision_width = collision_width
+        self.canvas.collision.add(self)
+        self.mass = np.inf
+        self.velocity = 0
+
+    def mini(self, grid, dt, xAdj=0, yAdj=0):
+        voxels = set()
+        xPos = self.x + xAdj
+        yPos = self.y + yAdj
+        if self.x_ == 0 and self.y_ == 0:
+            voxels.add((xPos // grid, yPos // grid))
+        elif self.x_ == 0:
+            voxels = voxels.union(
+                {(xPos // grid, y) for y in np.arange(min(yPos // grid, (yPos + self.y_ * dt) // grid),
+                                                      max(yPos // grid,
+                                                          (yPos + self.y_ * dt) // grid) + 1)})
+        elif self.y_ == 0:
+            voxels = voxels.union(
+                {(x, yPos // grid) for x in np.arange(min(xPos // grid, (xPos + self.x_ * dt) // grid),
+                                                      max(xPos // grid,
+                                                          (xPos + self.x_ * dt) // grid) + 1)})
+        # Initialization
+        else:
+            xUnit = xPos // grid
+            yUnit = yPos // grid
+            stepX = np.sign(self.x_)
+            stepY = np.sign(self.y_)
+            xMax = (xPos + self.x_ * dt) // grid
+            yMax = (yPos + self.y_ * dt) // grid
+            tMaxX = (grid * (xUnit + (stepX > 0)) - xPos) / (self.x_ * dt)
+            tMaxY = (grid * (yUnit + (stepY > 0)) - yPos) / (self.y_ * dt)
+            tDeltaX = grid / abs(self.x_ * dt)
+            tDeltaY = grid / abs(self.y_ * dt)
+            voxels.add((xUnit, yUnit))
+            # incremental traversal
+            while xUnit != xMax or yUnit != yMax:
+                if tMaxX < tMaxY:
+                    tMaxX = tMaxX + tDeltaX
+                    xUnit = xUnit + stepX
+                else:
+                    tMaxY = tMaxY + tDeltaY
+                    yUnit = yUnit + stepY
+                voxels.add((xUnit, yUnit))
+        return voxels
+
+    def rectangleTraversal(self, grid, dt):
+        """ see http://www.cse.yorku.ca/~amana/research/grid.pdf """
+        vox = set()
+        if np.sign(self.x_) == 1 and np.sign(self.y_) == -1:
+            vox = vox.union(self.mini(grid, dt, ))
+            vox = vox.union(self.mini(grid, dt, self.image.width(), self.image.height()))
+            for i in np.arange(self.x // grid, (self.x + self.image.width()) // grid + 1):
+                vox.add((i, (self.y + self.image.height()) // grid))
+            for j in np.arange(self.y // grid, (self.y + self.image.height()) // grid + 1):
+                vox.add((self.x // grid, j))
+            for i in np.arange((self.x + self.x_ * dt) // grid,
+                               (self.x + self.x_ * dt + self.image.width()) // grid + 1):
+                vox.add((i, (self.y + self.y_ * dt) // grid))
+            for j in np.arange((self.y + self.y_ * dt) // grid,
+                               (self.y + self.y_ * dt + self.image.height()) // grid + 1):
+                vox.add(((self.x + self.image.width() + self.x_ * dt) // grid, j))
+        elif np.sign(self.x_) == -1 and np.sign(self.y_) == 1:
+            vox = vox.union(self.mini(grid, dt, ))
+            vox = vox.union(self.mini(grid, dt, self.image.width(), self.image.height()))
+            for i in np.arange(self.x // grid, (self.x + self.image.width()) // grid + 1):
+                vox.add((i, self.y // grid))
+            for j in np.arange(self.y // grid, (self.y + self.image.height()) // grid + 1):
+                vox.add(((self.x + self.image.width()) // grid, j))
+            for i in np.arange((self.x + self.x_ * dt) // grid,
+                               (self.x + self.x_ * dt + self.image.width()) // grid + 1):
+                vox.add((i, (self.y + self.image.height() + self.y_ * dt) // grid))
+            for j in np.arange((self.y + self.y_ * dt) // grid,
+                               (self.y + self.y_ * dt + self.image.height()) // grid + 1):
+                vox.add(((self.x + self.x_ * dt) // grid, j))
+        elif np.sign(self.x_) == 1 and np.sign(self.y_) == 1:
+            vox = vox.union(self.mini(grid, dt, self.image.width(), 0))
+            vox = vox.union(self.mini(grid, dt, 0, self.image.height()))
+            for i in np.arange(self.x // grid, (self.x + self.image.width()) // grid + 1):
+                vox.add((i, self.y // grid))
+            for j in np.arange(self.y // grid, (self.y + self.image.height()) // grid + 1):
+                vox.add((self.x // grid, j))
+            for i in np.arange((self.x + self.x_ * dt) // grid,
+                               (self.x + self.x_ * dt + self.image.width()) // grid + 1):
+                vox.add((i, (self.y + self.image.height() + self.y_ * dt) // grid))
+            for j in np.arange((self.y + self.y_ * dt) // grid,
+                               (self.y + self.y_ * dt + self.image.height()) // grid + 1):
+                vox.add(((self.x + self.x_ * dt + self.image.width()) // grid, j))
+        elif np.sign(self.x_) == -1 and np.sign(self.y_) == -1:
+            vox = vox.union(self.mini(grid, dt, self.image.width(), 0))
+            vox = vox.union(self.mini(grid, dt, 0, self.image.height()))
+            for i in np.arange(self.x // grid, (self.x + self.image.width()) // grid + 1):
+                vox.add((i, (self.y + self.image.height()) // grid))
+            for j in np.arange(self.y // grid, (self.y + self.image.height()) // grid + 1):
+                vox.add(((self.x + self.image.width()) // grid, j))
+            for i in np.arange((self.x + self.x_ * dt) // grid,
+                               (self.x + self.x_ * dt + self.image.width()) // grid + 1):
+                vox.add((i, (self.y + self.y_ * dt) // grid))
+            for j in np.arange((self.y + self.y_ * dt) // grid,
+                               (self.y + self.y_ * dt + self.image.height()) // grid + 1):
+                vox.add(((self.x + self.x_ * dt) // grid, j))
+        elif np.sign(self.x_) == 0 and np.sign(self.y_) == 1:
+            for i in np.arange(self.x // grid, (self.x + self.image.width() + self.x_ * dt) // grid + 1):
+                vox.add((i, (self.y + self.image.height() + self.y_ * dt) // grid))
+                vox.add((i, self.y // grid))
+            for j in np.arange(self.y // grid, (self.y + self.image.height() + self.y_ * dt) // grid + 1):
+                vox.add(((self.x + self.image.width()) // grid, j))
+                vox.add((self.x // grid, j))
+        elif np.sign(self.x_) == 0 and np.sign(self.y_) == -1:
+            for i in np.arange(self.x // grid, (self.x + self.image.width()) // grid + 1):
+                vox.add((i, (self.y + self.y_ * dt) // grid))
+                vox.add((i, (self.y + self.image.height()) // grid))
+            for j in np.arange((self.y + self.y_ * dt) // grid, (self.y + self.image.height()) // grid + 1):
+                vox.add(((self.x + self.image.width()) // grid, j))
+                vox.add((self.x // grid, j))
+        elif np.sign(self.x_) == 1 and np.sign(self.y_) == 0:
+            for i in np.arange(self.x // grid, (self.x + self.image.width() + self.x_ * dt) // grid + 1):
+                vox.add((i, self.y // grid))
+                vox.add((i, (self.y + self.image.height()) // grid))
+            for j in np.arange(self.y // grid, (self.y + self.image.height()) // grid + 1):
+                vox.add(((self.x + self.image.width() + self.x_ * dt) // grid, j))
+                vox.add((self.x // grid, j))
+        else:
+            for i in np.arange((self.x + self.x_ * dt) // grid, (self.x + self.image.width()) // grid + 1):
+                vox.add((i, self.y // grid))
+                vox.add((i, (self.y + self.image.height()) // grid))
+            for j in np.arange(self.y // grid, (self.y + self.image.height()) // grid + 1):
+                vox.add(((self.x + self.image.width()) // grid, j))
+                vox.add(((self.x + self.x_ * dt) // grid, j))
+        return vox
+
+
 
 def update_physics(pGrid, dt):
     dt = dt / 1000
@@ -366,8 +512,8 @@ controller = controls(canvas)
 gravity = lambda obj: np.array([0, 300 * obj.mass])
 standard_forces = [gravity]
 canvas.add_blank_layer()
-boi = dynamic_canvas_object(canvas, np.array([28, 100]), np.array([200, -200]), 10, forces=standard_forces)
-hoi = dynamic_canvas_object(canvas, np.array([20, 200]), np.array([210, -300]), 10, forces=standard_forces, layer=1)
+boi = Dynamic(pGrid=canvas, position=np.array([28, 100]), velocity=np.array([200, -200]), mass=10, forces=standard_forces)
+hoi = Dynamic(pGrid=canvas, position=np.array([20, 200]), velocity=np.array([210, -300]), mass=10, forces=standard_forces, layer=1)
 # Pygame Loop -----------------------------------------------
 delta_time = 17
 while running:
