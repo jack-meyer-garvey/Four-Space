@@ -33,7 +33,7 @@ class PixelGrid:
                    "6": 260722654687953092608, "7": 571994325244371533824, "8": 260723639850371579904,
                    "9": 260723666092621758464}
 
-    def __init__(self, screen_size, pixel_size, background_color=2736806):
+    def __init__(self, screen_size, pixel_size, background_color=2736806, hash_grid_width = 20):
         self.screen_size = screen_size
         self.shift = (0, 0)
         self.pixel_size = pixel_size
@@ -47,6 +47,9 @@ class PixelGrid:
         self.clickable = set()
         self.dynamic = set()
         self.collision = set()
+        self.hashTable = {}
+        self.stableHashTable = {}
+        self.hash_grid_width = hash_grid_width
 
     def window_resize_shift(self, event_with_x_and_y):
         self.shift = ((event_with_x_and_y.x - self.screen_size[0]) // 2, (event_with_x_and_y.y - self.screen_size[1]) // 2)
@@ -136,6 +139,113 @@ class PixelGrid:
             i += 1
         return letter, y_position + 12, indexing
 
+    def update_physics(self, dt):
+        dt = dt / 1000
+        # for obj in pGrid.dynamic:
+        #     obj.erase()
+        #     acceleration = sum((f(obj) for f in obj.forces)) / obj.mass
+        #     obj.position = obj.position + obj.velocity * dt + 0.5 * acceleration * dt ** 2
+        #     obj.velocity = obj.velocity + acceleration * dt
+        #     obj.draw()
+        newHash = {key: val.copy() for key, val in self.stableHashTable.items()}
+        for P in Character.dynamicChars:
+            # Save the previous frame for rewind
+            P.xPath.append(P.x)
+            P.yPath.append(P.y)
+            P.x_Path.append(P.x_)
+            P.y_Path.append(P.y_)
+            # update the Spacial Hash Table
+            for _ in P.rectangleTraversal(grid, dt):
+                if _ not in newHash:
+                    newHash[_] = {}
+                newHash[_][P] = True
+        Character.hashTable = newHash
+
+        # Check for collisions and apply reactions
+        # start by going through each hash bucket to check for collisions.
+        # If a collision happens, add the collision to the time queue.
+        collisionPears = []
+        for val in Character.hashTable.values():
+            val = list(val.keys())
+            if len(val) > 1:
+                for _ in range(len(val)):
+                    for __ in range(_ + 1, len(val)):
+                        pear = (val[_].index, val[__].index)
+                        if pear not in collisionPears:
+                            truth, normX, normY, timeC = SweptAABB(val[_].x, val[_].y, val[_].x_, val[_].y_,
+                                                                   val[_].image.width(),
+                                                                   val[_].image.height(),
+                                                                   val[__].x, val[__].y, val[__].x_, val[__].y_,
+                                                                   val[__].image.width(), val[__].image.height(),
+                                                                   dt)
+                            collisionPears.append(pear)
+                            if not truth:
+                                if timeC not in Character.collisions:
+                                    Character.collisions[timeC] = {}
+                                Character.collisions[timeC][(val[_].index, val[__].index)] = True
+        # sequentially resolve collisions in the order that they occur
+        # for each pair of colliding objects, check if the collision should still occur
+        # then resolve the collision
+        # finally, check for any new collisions resulting from this resolution
+        timeElapsed = 0
+        tP = 0
+        timeQueue = sorted(Character.collisions.keys())
+        while tP < len(timeQueue):
+            for P in Character.dynamicChars:
+                P.x += P.x_ * dt * (timeQueue[tP] - timeElapsed)
+                P.y += P.y_ * dt * (timeQueue[tP] - timeElapsed)
+            pairQueue = list(Character.collisions[timeQueue[tP]].keys())
+            for A, B in pairQueue:
+                A = Character.instances[A]
+                B = Character.instances[B]
+                truth, normX, normY, tim = SweptAABB(A.x, A.y, A.x_, A.y_, A.image.width(), A.image.height(),
+                                                     B.x, B.y, B.x_, B.y_, B.image.width(), B.image.height(),
+                                                     1 - timeQueue[tP])
+                if not truth:
+                    if A.dynamic != B.dynamic:
+                        if normX:
+                            A.x_ = 0
+                            B.x_ = 0
+                        else:
+                            A.y_ = 0
+                            B.y_ = 0
+                    else:
+                        if normX:
+                            A.x_, B.x_ = B.x_, A.x_
+                        else:
+                            A.y_, B.y_ = B.y_, A.y_
+                    collisionPears = set()
+                    for C in [A, B]:
+                        if C.dynamic:
+                            for _ in C.rectangleTraversal(grid, dt * (1 - timeQueue[tP])):
+                                if _ in Character.hashTable:
+                                    for D in Character.hashTable[_]:
+                                        if (C.index, D.index) not in collisionPears and C.index != D.index:
+                                            collisionPears.add((C.index, D.index))
+                                            truth, normX, normY, timeC = SweptAABB(C.x, C.y, C.x_, C.y_,
+                                                                                   C.image.width(),
+                                                                                   C.image.height(),
+                                                                                   D.x, D.y, D.x_, D.y_,
+                                                                                   D.image.width(), D.image.height(),
+                                                                                   dt * (1 - timeQueue[tP]))
+                                            if not truth:
+                                                timeC = timeQueue[tP] + (1 - timeQueue[tP]) * timeC
+                                                if timeC not in Character.collisions:
+                                                    Character.collisions[timeC] = {}
+                                                Character.collisions[timeC][(C.index, D.index)] = True
+                                                if timeC not in timeQueue:
+                                                    timeQueue.append(timeC)
+                                                elif timeC == timeQueue[tP]:
+                                                    pairQueue.append((C.index, D.index))
+                                else:
+                                    Character.hashTable[_] = {}
+                                Character.hashTable[_][A] = True
+            timeQueue = sorted(timeQueue)
+            timeElapsed = timeQueue[tP]
+            tP += 1
+        Character.collisions.clear()
+        Character.collisions[1] = {}
+
 def default_image(x_length=16, y_length=16, color=2**24 - 1, thickness=2):
     if x_length < 2 or y_length < 2:
         raise ValueError("x_length and y_length must be at least 2 to form a border.")
@@ -152,8 +262,6 @@ def default_image(x_length=16, y_length=16, color=2**24 - 1, thickness=2):
 
     return [color_layer, mask_layer]
 
-
-
 # Canvas Objects ----------
 class PhysicalCanvasObject:
     def __init__(self, *, pGrid, position, layer=0, sprite=None, sprite_offset=None):
@@ -166,7 +274,6 @@ class PhysicalCanvasObject:
         self.layer = layer
         self.image = sprite
         self.image_offset = sprite_offset
-        self.draw()
 
     def pixel_position(self):
         return np.array([round(self.position[0]), round(self.position[1])])+self.image_offset
@@ -177,55 +284,62 @@ class PhysicalCanvasObject:
     def erase(self):
         self.canvas.erase(self.layer, *self.pixel_position(), *(self.pixel_position()+self.image[0].shape))
 
-class Dynamic(PhysicalCanvasObject):
-    def __init__(self, *, pGrid, position, velocity, mass, layer=0, sprite=None, forces = None):
-        super().__init__(pGrid=pGrid, position=position, layer=layer, sprite=sprite)
-        self.canvas.dynamic.add(self)
-        self.velocity = velocity
-        self.mass = mass
-        self.forces = forces
+    def spawn(self):
+        self.draw()
+
+    def despawn(self):
+        self.erase()
 
 class Collision(PhysicalCanvasObject):
-    def __init__(self, *, pGrid, position, layer=0, sprite=None, collision_offset=None, collision_width=None):
-        super().__init__(pGrid=pGrid, position=position, layer=layer, sprite=sprite)
+    def __init__(self, *, pGrid, position, layer=0, sprite=None, collision_width=None, collision_offset=None, sprite_offset=None):
+        super().__init__(pGrid=pGrid, position=position, layer=layer, sprite=sprite, sprite_offset=sprite_offset)
         if collision_offset is None:
             collision_offset = np.array([0, 0])
         if collision_width is None:
             collision_width = np.array([16, 16])
         self.collision_offset = collision_offset
         self.collision_width = collision_width
-        self.canvas.collision.add(self)
         self.mass = np.inf
-        self.velocity = 0
+        self.velocity = np.array([0,0])
+        self.forces = []
+
+    def spawn(self):
+        super().spawn()
+        self.canvas.collision.add(self)
+
+    def despawn(self):
+        super().despawn()
+        self.canvas.collision.remove(self)
 
     def mini(self, grid, dt, xAdj=0, yAdj=0):
         voxels = set()
-        xPos = self.x + xAdj
-        yPos = self.y + yAdj
-        if self.x_ == 0 and self.y_ == 0:
+        xPos = self.position[0] + xAdj
+        yPos = self.position[1] + yAdj
+        xChange, yChange = self.velocity + 0.5 * sum((f(self) for f in self.forces)) / self.mass * dt
+        if xChange == 0 and yChange == 0:
             voxels.add((xPos // grid, yPos // grid))
-        elif self.x_ == 0:
+        elif xChange == 0:
             voxels = voxels.union(
-                {(xPos // grid, y) for y in np.arange(min(yPos // grid, (yPos + self.y_ * dt) // grid),
+                {(xPos // grid, y) for y in np.arange(min(yPos // grid, (yPos + yChange * dt) // grid),
                                                       max(yPos // grid,
-                                                          (yPos + self.y_ * dt) // grid) + 1)})
-        elif self.y_ == 0:
+                                                          (yPos + yChange * dt) // grid) + 1)})
+        elif yChange == 0:
             voxels = voxels.union(
-                {(x, yPos // grid) for x in np.arange(min(xPos // grid, (xPos + self.x_ * dt) // grid),
+                {(x, yPos // grid) for x in np.arange(min(xPos // grid, (xPos + xChange * dt) // grid),
                                                       max(xPos // grid,
-                                                          (xPos + self.x_ * dt) // grid) + 1)})
+                                                          (xPos + xChange * dt) // grid) + 1)})
         # Initialization
         else:
             xUnit = xPos // grid
             yUnit = yPos // grid
-            stepX = np.sign(self.x_)
-            stepY = np.sign(self.y_)
-            xMax = (xPos + self.x_ * dt) // grid
-            yMax = (yPos + self.y_ * dt) // grid
-            tMaxX = (grid * (xUnit + (stepX > 0)) - xPos) / (self.x_ * dt)
-            tMaxY = (grid * (yUnit + (stepY > 0)) - yPos) / (self.y_ * dt)
-            tDeltaX = grid / abs(self.x_ * dt)
-            tDeltaY = grid / abs(self.y_ * dt)
+            stepX = np.sign(xChange)
+            stepY = np.sign(yChange)
+            xMax = (xPos + xChange * dt) // grid
+            yMax = (yPos + yChange * dt) // grid
+            tMaxX = (grid * (xUnit + (stepX > 0)) - xPos) / (xChange * dt)
+            tMaxY = (grid * (yUnit + (stepY > 0)) - yPos) / (yChange * dt)
+            tDeltaX = grid / abs(xChange * dt)
+            tDeltaY = grid / abs(yChange * dt)
             voxels.add((xUnit, yUnit))
             # incremental traversal
             while xUnit != xMax or yUnit != yMax:
@@ -241,98 +355,189 @@ class Collision(PhysicalCanvasObject):
     def rectangleTraversal(self, grid, dt):
         """ see http://www.cse.yorku.ca/~amana/research/grid.pdf """
         vox = set()
-        if np.sign(self.x_) == 1 and np.sign(self.y_) == -1:
+        xPos, yPos = self.position
+        xChange, yChange = self.velocity + 0.5 * sum((f(self) for f in self.forces)) / self.mass * dt
+        xWidth, yWidth = self.collision_width
+        if np.sign(xChange) == 1 and np.sign(yChange) == -1:
             vox = vox.union(self.mini(grid, dt, ))
-            vox = vox.union(self.mini(grid, dt, self.image.width(), self.image.height()))
-            for i in np.arange(self.x // grid, (self.x + self.image.width()) // grid + 1):
-                vox.add((i, (self.y + self.image.height()) // grid))
-            for j in np.arange(self.y // grid, (self.y + self.image.height()) // grid + 1):
-                vox.add((self.x // grid, j))
-            for i in np.arange((self.x + self.x_ * dt) // grid,
-                               (self.x + self.x_ * dt + self.image.width()) // grid + 1):
-                vox.add((i, (self.y + self.y_ * dt) // grid))
-            for j in np.arange((self.y + self.y_ * dt) // grid,
-                               (self.y + self.y_ * dt + self.image.height()) // grid + 1):
-                vox.add(((self.x + self.image.width() + self.x_ * dt) // grid, j))
-        elif np.sign(self.x_) == -1 and np.sign(self.y_) == 1:
+            vox = vox.union(self.mini(grid, dt, xWidth, yWidth))
+            for i in np.arange(xPos // grid, (xPos + xWidth) // grid + 1):
+                vox.add((i, (yPos + yWidth) // grid))
+            for j in np.arange(yPos // grid, (yPos + yWidth) // grid + 1):
+                vox.add((xPos // grid, j))
+            for i in np.arange((xPos + xChange * dt) // grid,
+                               (xPos + xChange * dt + xWidth) // grid + 1):
+                vox.add((i, (yPos + yChange * dt) // grid))
+            for j in np.arange((yPos + yChange * dt) // grid,
+                               (yPos + yChange * dt + yWidth) // grid + 1):
+                vox.add(((xPos + xWidth + xChange * dt) // grid, j))
+        elif np.sign(xChange) == -1 and np.sign(yChange) == 1:
             vox = vox.union(self.mini(grid, dt, ))
-            vox = vox.union(self.mini(grid, dt, self.image.width(), self.image.height()))
-            for i in np.arange(self.x // grid, (self.x + self.image.width()) // grid + 1):
-                vox.add((i, self.y // grid))
-            for j in np.arange(self.y // grid, (self.y + self.image.height()) // grid + 1):
-                vox.add(((self.x + self.image.width()) // grid, j))
-            for i in np.arange((self.x + self.x_ * dt) // grid,
-                               (self.x + self.x_ * dt + self.image.width()) // grid + 1):
-                vox.add((i, (self.y + self.image.height() + self.y_ * dt) // grid))
-            for j in np.arange((self.y + self.y_ * dt) // grid,
-                               (self.y + self.y_ * dt + self.image.height()) // grid + 1):
-                vox.add(((self.x + self.x_ * dt) // grid, j))
-        elif np.sign(self.x_) == 1 and np.sign(self.y_) == 1:
-            vox = vox.union(self.mini(grid, dt, self.image.width(), 0))
-            vox = vox.union(self.mini(grid, dt, 0, self.image.height()))
-            for i in np.arange(self.x // grid, (self.x + self.image.width()) // grid + 1):
-                vox.add((i, self.y // grid))
-            for j in np.arange(self.y // grid, (self.y + self.image.height()) // grid + 1):
-                vox.add((self.x // grid, j))
-            for i in np.arange((self.x + self.x_ * dt) // grid,
-                               (self.x + self.x_ * dt + self.image.width()) // grid + 1):
-                vox.add((i, (self.y + self.image.height() + self.y_ * dt) // grid))
-            for j in np.arange((self.y + self.y_ * dt) // grid,
-                               (self.y + self.y_ * dt + self.image.height()) // grid + 1):
-                vox.add(((self.x + self.x_ * dt + self.image.width()) // grid, j))
-        elif np.sign(self.x_) == -1 and np.sign(self.y_) == -1:
-            vox = vox.union(self.mini(grid, dt, self.image.width(), 0))
-            vox = vox.union(self.mini(grid, dt, 0, self.image.height()))
-            for i in np.arange(self.x // grid, (self.x + self.image.width()) // grid + 1):
-                vox.add((i, (self.y + self.image.height()) // grid))
-            for j in np.arange(self.y // grid, (self.y + self.image.height()) // grid + 1):
-                vox.add(((self.x + self.image.width()) // grid, j))
-            for i in np.arange((self.x + self.x_ * dt) // grid,
-                               (self.x + self.x_ * dt + self.image.width()) // grid + 1):
-                vox.add((i, (self.y + self.y_ * dt) // grid))
-            for j in np.arange((self.y + self.y_ * dt) // grid,
-                               (self.y + self.y_ * dt + self.image.height()) // grid + 1):
-                vox.add(((self.x + self.x_ * dt) // grid, j))
-        elif np.sign(self.x_) == 0 and np.sign(self.y_) == 1:
-            for i in np.arange(self.x // grid, (self.x + self.image.width() + self.x_ * dt) // grid + 1):
-                vox.add((i, (self.y + self.image.height() + self.y_ * dt) // grid))
-                vox.add((i, self.y // grid))
-            for j in np.arange(self.y // grid, (self.y + self.image.height() + self.y_ * dt) // grid + 1):
-                vox.add(((self.x + self.image.width()) // grid, j))
-                vox.add((self.x // grid, j))
-        elif np.sign(self.x_) == 0 and np.sign(self.y_) == -1:
-            for i in np.arange(self.x // grid, (self.x + self.image.width()) // grid + 1):
-                vox.add((i, (self.y + self.y_ * dt) // grid))
-                vox.add((i, (self.y + self.image.height()) // grid))
-            for j in np.arange((self.y + self.y_ * dt) // grid, (self.y + self.image.height()) // grid + 1):
-                vox.add(((self.x + self.image.width()) // grid, j))
-                vox.add((self.x // grid, j))
-        elif np.sign(self.x_) == 1 and np.sign(self.y_) == 0:
-            for i in np.arange(self.x // grid, (self.x + self.image.width() + self.x_ * dt) // grid + 1):
-                vox.add((i, self.y // grid))
-                vox.add((i, (self.y + self.image.height()) // grid))
-            for j in np.arange(self.y // grid, (self.y + self.image.height()) // grid + 1):
-                vox.add(((self.x + self.image.width() + self.x_ * dt) // grid, j))
-                vox.add((self.x // grid, j))
+            vox = vox.union(self.mini(grid, dt, xWidth, yWidth))
+            for i in np.arange(xPos // grid, (xPos + xWidth) // grid + 1):
+                vox.add((i, yPos // grid))
+            for j in np.arange(yPos // grid, (yPos + yWidth) // grid + 1):
+                vox.add(((xPos + xWidth) // grid, j))
+            for i in np.arange((xPos + xChange * dt) // grid,
+                               (xPos + xChange * dt + xWidth) // grid + 1):
+                vox.add((i, (yPos + yWidth + yChange * dt) // grid))
+            for j in np.arange((yPos + yChange * dt) // grid,
+                               (yPos + yChange * dt + yWidth) // grid + 1):
+                vox.add(((xPos + xChange * dt) // grid, j))
+        elif np.sign(xChange) == 1 and np.sign(yChange) == 1:
+            vox = vox.union(self.mini(grid, dt, xWidth, 0))
+            vox = vox.union(self.mini(grid, dt, 0, yWidth))
+            for i in np.arange(xPos // grid, (xPos + xWidth) // grid + 1):
+                vox.add((i, yPos // grid))
+            for j in np.arange(yPos // grid, (yPos + yWidth) // grid + 1):
+                vox.add((xPos // grid, j))
+            for i in np.arange((xPos + xChange * dt) // grid,
+                               (xPos + xChange * dt + xWidth) // grid + 1):
+                vox.add((i, (yPos + yWidth + yChange * dt) // grid))
+            for j in np.arange((yPos + yChange * dt) // grid,
+                               (yPos + yChange * dt + yWidth) // grid + 1):
+                vox.add(((xPos + xChange * dt + xWidth) // grid, j))
+        elif np.sign(xChange) == -1 and np.sign(yChange) == -1:
+            vox = vox.union(self.mini(grid, dt, xWidth, 0))
+            vox = vox.union(self.mini(grid, dt, 0, yWidth))
+            for i in np.arange(xPos // grid, (xPos + xWidth) // grid + 1):
+                vox.add((i, (yPos + yWidth) // grid))
+            for j in np.arange(yPos // grid, (yPos + yWidth) // grid + 1):
+                vox.add(((xPos + xWidth) // grid, j))
+            for i in np.arange((xPos + xChange * dt) // grid,
+                               (xPos + xChange * dt + xWidth) // grid + 1):
+                vox.add((i, (yPos + yChange * dt) // grid))
+            for j in np.arange((yPos + yChange * dt) // grid,
+                               (yPos + yChange * dt + yWidth) // grid + 1):
+                vox.add(((xPos + xChange * dt) // grid, j))
+        elif np.sign(xChange) == 0 and np.sign(yChange) == 1:
+            for i in np.arange(xPos // grid, (xPos + xWidth + xChange * dt) // grid + 1):
+                vox.add((i, (yPos + yWidth + yChange * dt) // grid))
+                vox.add((i, yPos // grid))
+            for j in np.arange(yPos // grid, (yPos + yWidth + yChange * dt) // grid + 1):
+                vox.add(((xPos + xWidth) // grid, j))
+                vox.add((xPos // grid, j))
+        elif np.sign(xChange) == 0 and np.sign(yChange) == -1:
+            for i in np.arange(xPos // grid, (xPos + xWidth) // grid + 1):
+                vox.add((i, (yPos + yChange * dt) // grid))
+                vox.add((i, (yPos + yWidth) // grid))
+            for j in np.arange((yPos + yChange * dt) // grid, (yPos + yWidth) // grid + 1):
+                vox.add(((xPos + xWidth) // grid, j))
+                vox.add((xPos // grid, j))
+        elif np.sign(xChange) == 1 and np.sign(yChange) == 0:
+            for i in np.arange(xPos // grid, (xPos + xWidth + xChange * dt) // grid + 1):
+                vox.add((i, yPos // grid))
+                vox.add((i, (yPos + yWidth) // grid))
+            for j in np.arange(yPos // grid, (yPos + yWidth) // grid + 1):
+                vox.add(((xPos + xWidth + xChange * dt) // grid, j))
+                vox.add((xPos // grid, j))
         else:
-            for i in np.arange((self.x + self.x_ * dt) // grid, (self.x + self.image.width()) // grid + 1):
-                vox.add((i, self.y // grid))
-                vox.add((i, (self.y + self.image.height()) // grid))
-            for j in np.arange(self.y // grid, (self.y + self.image.height()) // grid + 1):
-                vox.add(((self.x + self.image.width()) // grid, j))
-                vox.add(((self.x + self.x_ * dt) // grid, j))
+            for i in np.arange((xPos + xChange * dt) // grid, (xPos + xWidth) // grid + 1):
+                vox.add((i, yPos // grid))
+                vox.add((i, (yPos + yWidth) // grid))
+            for j in np.arange(yPos // grid, (yPos + yWidth) // grid + 1):
+                vox.add(((xPos + xWidth) // grid, j))
+                vox.add(((xPos + xChange * dt) // grid, j))
         return vox
 
+class Dynamic(PhysicalCanvasObject):
+    def __init__(self, *, pGrid, position, velocity, mass, layer=0, sprite=None, forces = None):
+        super().__init__(pGrid=pGrid, position=position, layer=layer, sprite=sprite)
+        self.velocity = velocity
+        self.mass = mass
+        self.forces = forces
 
+    def spawn(self):
+        super().spawn()
+        self.canvas.dynamic.add(self)
 
-def update_physics(pGrid, dt):
-    dt = dt / 1000
-    for obj in pGrid.dynamic:
-        obj.erase()
-        acceleration = sum((f(obj) for f in obj.forces)) / obj.mass
-        obj.position = obj.position + obj.velocity * dt + 0.5 * acceleration * dt ** 2
-        obj.velocity = obj.velocity + acceleration * dt
-        obj.draw()
+    def despawn(self):
+        super().despawn()
+        self.canvas.dynamic.remove(self)
+
+class DynamicCollision(Dynamic, Collision):
+    def spawn(self):
+        super().spawn()
+
+    def despawn(self):
+        super().despawn()
+
+class StaticCollision(Collision):
+    def __init__(self, *, pGrid, position, layer=0, sprite=None, sprite_offset=None):
+        super().__init__(pGrid=pGrid, position=position, layer=0, sprite=None, sprite_offset=None)
+
+    def spawn(self):
+        super().spawn()
+        for _ in self.rectangleTraversal(self.canvas.hash_grid_width, 0):
+            if _ not in self.canvas.stableHashTable:
+                self.canvas.stableHashTable[_] = set()
+            self.canvas.stableHashTable[_].add(self)
+
+    def despawn(self):
+        super().despawn()
+        for _ in self.rectangleTraversal(self.canvas.hash_grid_width, 0):
+            self.canvas.stableHashTable[_].remove(self)
+
+def SweptAABB(x1, y1, x1_, y1_, width1, height1, x2, y2, x2_, y2_, width2, height2, dt):
+    """see https://www.gamedev.net/tutorials/_/technical/game-programming/swept-aabb-collision-detection-and-response-r3084/"""
+    vx = (x1_ - x2_) * dt
+    vy = (y1_ - y2_) * dt
+    if vx > 0:
+        xInvEntry = x2 - (x1 + width1)
+        xInvExit = (x2 + width2) - x1
+    else:
+        xInvEntry = (x2 + width2) - x1
+        xInvExit = x2 - (x1 + width1)
+    if vy > 0:
+        yInvEntry = y2 - (y1 + height1)
+        yInvExit = (y2 + height2) - y1
+    else:
+        yInvEntry = (y2 + height2) - y1
+        yInvExit = y2 - (y1 + height1)
+    if vx == 0:
+        if x1 >= x2 + width2 or x2 >= x1 + width1:
+            return 1, 0, 0, 1
+        xEntry = float('-inf')
+        xExit = float('inf')
+    else:
+        xEntry = xInvEntry / vx
+        xExit = xInvExit / vx
+    if vy == 0:
+        if y1 >= y2 + height2 or y2 >= y1 + height1:
+            return 1, 0, 0, 1
+        yEntry = float('-inf')
+        yExit = float('inf')
+    else:
+        yEntry = yInvEntry / vy
+        yExit = yInvExit / vy
+    entryTime = max(xEntry, yEntry)
+    exitTime = min(xExit, yExit)
+    # If there was no collision
+    if entryTime > exitTime or xEntry > 1 or yEntry > 1:
+        normalX = 0
+        normalY = 0
+        return 1, normalX, normalY, 1
+    # If there was a collision
+    else:
+        # calculate normal of collided surface
+        if xEntry > yEntry:
+            if xInvEntry < 0:
+                normalX = 1
+                normalY = 0
+            else:
+                normalX = -1
+                normalY = 0
+        else:
+            if yInvEntry < 0:
+                normalX = 0
+                normalY = 1
+            else:
+                normalX = 0
+                normalY = -1
+        if xEntry < 0 and yEntry < 0:
+            return 1, normalX, normalY, entryTime
+
+        return 0, normalX, normalY, entryTime
 
 class clickable_canvas_object:
     def __init__(self, pGrid, x_position, y_position, x_position_end, y_position_end):
@@ -481,6 +686,7 @@ class controls:
 
     def mouse_button_down(self, mouse_event):
         if mouse_event.button == 1:
+            canvas.update_physics(delta_time)
             for p in self.canvas.clickable:
                 p.mouse_click_down()
 
@@ -512,10 +718,12 @@ controller = controls(canvas)
 gravity = lambda obj: np.array([0, 300 * obj.mass])
 standard_forces = [gravity]
 canvas.add_blank_layer()
-boi = Dynamic(pGrid=canvas, position=np.array([28, 100]), velocity=np.array([200, -200]), mass=10, forces=standard_forces)
-hoi = Dynamic(pGrid=canvas, position=np.array([20, 200]), velocity=np.array([210, -300]), mass=10, forces=standard_forces, layer=1)
+boi = DynamicCollision(pGrid=canvas, position=np.array([0, 100]), velocity=np.array([230, -200]), mass=10, forces=standard_forces)
+hoi = StaticCollision(pGrid=canvas, position=np.array([20, 200]), layer=1)
+boi.spawn()
+hoi.spawn()
 # Pygame Loop -----------------------------------------------
-delta_time = 17
+delta_time = 10
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -523,14 +731,15 @@ while running:
         else:
             controller(event)
 
-    update_physics(canvas, delta_time)
+    # canvas.update_physics(canvas, delta_time)
 
     canvas.apply_layers()
     pygame.surfarray.blit_array(game_region, canvas.main_canvas)
     screen.blit(game_region, canvas.shift)
     pygame.display.flip()
 
-    delta_time = clock.tick(120) # limits FPS to 60
+    delta_time = clock.tick(60)
+    # limits FPS to 60
     #if clock.get_fps() < 58 and clock.get_fps():
     #    print(clock.get_fps())
 
